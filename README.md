@@ -9,7 +9,7 @@ This repository builds a real `.fwsc` package you can flash with
 ![M3 on the screen](docs/m3.png)
 
 - **five effect slots** in a fixed chain: DRIVE (tanh + tone), CHORUS (modulated delay),
-  DELAY (up to 278 ms with feedback), REVERB (4 combs + 2 allpass per channel), COMP (peak compressor)
+  DELAY (up to 139 ms with feedback), REVERB (4 combs + 2 allpass per channel), COMP (peak compressor)
 - **an FX page**: K1 walks the chain, K2-K4 edit A/B/C (amount, tone/feedback/depth, mix),
   FX turns the selected slot on and off; the page shows the whole chain with its mix
 - **four patch slots** in flash: on PATCH, K1 picks a preset, K2 picks a slot (and loads it),

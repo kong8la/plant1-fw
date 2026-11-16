@@ -115,9 +115,9 @@ static const fx_t FX_PRESET[8][FX_MAX] = {
     { FXZ, FXZ, FXZ, FXN(FX_REVERB, 0.55f, 0.35f, 0.40f), FXZ },                /* GLASS BELL */
     { FXN(FX_DRIVE, 0.35f, 0.45f, 0.45f), FXZ, FXZ, FXZ, FXZ },                 /* FM BASS */
     { FXZ, FXN(FX_CHORUS, 0.45f, 0.55f, 0.45f), FXZ, FXN(FX_REVERB, 0.45f, 0.40f, 0.22f), FXZ }, /* SUPER SAW */
-    { FXZ, FXN(FX_CHORUS, 0.30f, 0.65f, 0.40f), FXN(FX_DELAY, 180.0f, 0.30f, 0.22f), FXN(FX_REVERB, 0.70f, 0.45f, 0.35f), FXZ }, /* PHASE PAD */
-    { FXZ, FXZ, FXN(FX_DELAY, 210.0f, 0.28f, 0.28f), FXN(FX_REVERB, 0.40f, 0.45f, 0.25f), FXZ }, /* PLUCK */
-    { FXN(FX_DRIVE, 0.55f, 0.50f, 0.55f), FXZ, FXN(FX_DELAY, 150.0f, 0.30f, 0.18f), FXZ, FXZ },  /* ACID */
+    { FXZ, FXN(FX_CHORUS, 0.30f, 0.65f, 0.40f), FXN(FX_DELAY, 0.85f, 0.30f, 0.22f), FXN(FX_REVERB, 0.70f, 0.45f, 0.35f), FXZ }, /* PHASE PAD */
+    { FXZ, FXZ, FXN(FX_DELAY, 0.92f, 0.28f, 0.28f), FXN(FX_REVERB, 0.40f, 0.45f, 0.25f), FXZ }, /* PLUCK */
+    { FXN(FX_DRIVE, 0.55f, 0.50f, 0.55f), FXZ, FXN(FX_DELAY, 0.75f, 0.30f, 0.18f), FXZ, FXZ },  /* ACID */
     { FXZ, FXN(FX_CHORUS, 0.22f, 0.60f, 0.30f), FXZ, FXN(FX_REVERB, 0.80f, 0.50f, 0.50f), FXZ }  /* DARK CHOIR */
 };
 
@@ -209,10 +209,10 @@ static float svf_run(svf_t *f, float x)
 }
 
 /* ------------------------------------------------------------------ fx --- */
-#define DLY_N 12288     /* ~278 ms at 44.1 kHz */
+#define DLY_N 6144      /* ~139 ms at 44.1 kHz */
 #define CHO_N 2048      /* ~46 ms */
-#define RV_N 1600
-#define RV_AP_N 600
+#define RV_N 1200
+#define RV_AP_N 512
 
 static int16_t dly_b[2][DLY_N];
 static int16_t cho_b[2][CHO_N];
@@ -260,7 +260,7 @@ static float fx_chorus(float x, int ch, fx_t *F)
 
 static float fx_delay(float x, int ch, fx_t *F)
 {
-    float time = fm_clampf(F->p1, 10.0f, 280.0f) * 0.001f * SR;
+    float time = (10.0f + F->p1 * 120.0f) * 0.001f * SR;
     float y = fx_read(dly_b[ch], DLY_N, dly_i, time);
     fx_write(dly_b[ch], DLY_N, dly_i, x + y * F->p2);
     return x + y * F->p3;
@@ -268,8 +268,8 @@ static float fx_delay(float x, int ch, fx_t *F)
 
 static float fx_reverb(float x, int ch, fx_t *F)
 {
-    static const uint16_t CL[4] = {1116, 1188, 1277, 1356};
-    static const uint16_t AP[2] = {225, 556};
+    static const uint16_t CL[4] = {1116, 1145, 1188, 1219};
+    static const uint16_t AP[2] = {225, 480};
     float g = 0.70f + F->p1 * 0.23f;
     float damp = 0.15f + F->p2 * 0.6f;
     float sum = 0.0f;
