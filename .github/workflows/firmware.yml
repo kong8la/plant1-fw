@@ -1,4 +1,4 @@
-﻿name: firmware
+name: firmware
 
 # Builds the package in GitHub's Ubuntu runner with the shared FM-1 builder
 # (JieLi Linux toolchain + AC79 SDK, then ./build.sh) and attests it.
@@ -16,7 +16,7 @@ jobs:
   build:
     uses: zvenson/fm1-build/.github/workflows/build.yml@v1
     permissions:
-      contents: read
+      contents: write      # the shared builder releases on a tag
       id-token: write
       attestations: write
     with:
