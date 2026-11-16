@@ -1,9 +1,23 @@
 wait 600
-# the keys play the FM voice: key 7 is C4
+# the keys play the four-slot engine: key 7 is C4
 key 7 down
 wait 60
 expect note 60
-shot key.png
 key 7 up
 wait 400
 expect note -1
+# the panel: SEL picks a slot (all four, even off), EDIT changes page
+tap SEL
+wait 30
+expect sel 1
+expect genon 0
+# K1 on GEN sets the slot's type and turns it on
+turn K1 1
+wait 30
+expect genon 1
+expect gtype 2
+shot gen.png
+tap EDIT
+wait 30
+expect page 1
+shot filter.png

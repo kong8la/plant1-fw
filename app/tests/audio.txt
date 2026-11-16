@@ -1,0 +1,8 @@
+wait 300
+key 7 down
+wait 200
+wav note.wav
+wait 400
+wavstop
+key 7 up
+wait 200

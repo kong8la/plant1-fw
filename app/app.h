@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: MIT
- * PLANT-1 M0: the smallest PLANT-1 firmware for the FM-1.
- * One FM voice (carrier + modulator), an ADSR, the 27 keys, a screen. */
+ * PLANT-1 M1: four generator slots, a filter per slot, unison, six voices, three panel pages. */
 #pragma once
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "PLANT1M0"
+#define APP_NAME "PLANT1M1"
 #define APP_SPLASH_RGB RGB(56, 189, 248)
 #define APP_BLOCK 256u
 

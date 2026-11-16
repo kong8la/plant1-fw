@@ -1,15 +1,15 @@
-# PLANT-1 M0 build settings (tools/build.py)
-name = "PLANT1M0"
-id_prefix = "FM-1_90"          # dev identity FM-1_9000
+# PLANT-1 M1 build settings (tools/build.py)
+name = "PLANT1M1"
+id_prefix = "FM-1_91"          # dev identity FM-1_9100
 usb_manufacturer = "PLANT-1"
-usb_product = "PLANT1 M0 FM-1"
+usb_product = "PLANT1 M1 FM-1"
 o2 = []
 words = "words.tsv"
 ble = false
 licence = "MIT"
-tagline = "PLANT-1 M0: one FM voice on the FM-1"
+tagline = "PLANT-1 M1: four generators on the FM-1"
 repo = "https://github.com/kong8la/plant1-fw"
 author = "kong8la"
-description = "PLANT-1 M0: one FM voice, one ADSR, the 27 keys and a screen. Proves the build and flash chain before the module engine arrives."
+description = "PLANT-1 M1: four generator slots (analog, wavetable, FM, noise), a filter per slot, unison, six voices, edited from the panel's encoders and buttons."
 tags = ["synth"]
 credits = "built on fm1-base"
