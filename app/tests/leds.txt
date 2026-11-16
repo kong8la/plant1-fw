@@ -1,0 +1,24 @@
+wait 400
+leds
+# a held key is bright, and its neighbours fade
+key 7 down
+wait 60
+leds
+key 7 up
+wait 120
+leds
+# the idle scanner keeps moving
+wait 400
+leds
+# a page change blinks its button
+tap EDIT
+wait 45
+leds
+wait 300
+leds
+# a preset load sweeps the keys
+tap EDIT
+tap EDIT
+turn K1 1
+wait 60
+leds

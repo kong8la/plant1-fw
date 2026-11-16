@@ -15,6 +15,8 @@ This repository builds a real `.fwsc` package you can flash with
   the LFO shape, the note and the voice count
 - **patch storage**: SAVE writes the whole patch to flash; it comes back after a power cycle
 - **LFO to cutoff or tremolo**, per voice
+- **LED animations**: an idle scanner walks the 27 keys, a held key is bright with a fading tail,
+  a preset load sweeps the keys, a page change blinks its button, and the octave buttons show their state
 
 ```
 SEL slot   EDIT page   K1-K4 the page's four values   SAVE store   OCT+/- transpose

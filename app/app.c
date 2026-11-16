@@ -645,6 +645,61 @@ static void key_edges(uint32_t keys)
     prev = keys;
 }
 
+/* ---------------------------------------------------------------- lights --- */
+#define ANIM_NONE 0
+#define ANIM_SWEEP 1
+#define ANIM_BLINK 2
+
+static float key_glow[NKEYS];
+static uint32_t anim_t0, anim_kind;
+
+static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_SAVE};
+
+static void anim_start(uint8_t kind, uint32_t now)
+{
+    anim_kind = kind;
+    anim_t0 = now;
+}
+
+/* called once a frame: the held keys are bright, released ones fade, an idle scanner
+ * walks the keys, a preset load sweeps them, a page change blinks its button. */
+static void lights_frame(uint32_t keys, uint32_t pressed, uint32_t now)
+{
+    uint32_t bright_k = keys, dim_k = 0, bright_b = pressed, dim_b = 0;
+    uint32_t step = now / 70u;
+    int32_t pos = (int32_t)(step % (uint32_t)(NKEYS + 10)) - 5;
+    int i;
+
+    for (i = 0; i < NKEYS; i++) {
+        int32_t d;
+        if (keys & (1u << i)) key_glow[i] = 1.0f;
+        else key_glow[i] *= 0.90f;
+        if (key_glow[i] > 0.06f) dim_k |= 1u << i;
+        d = i - pos;
+        if (d < 0) d = -d;
+        if (d < 4) dim_k |= 1u << i;               /* the idle scanner */
+    }
+
+    if (anim_kind == ANIM_SWEEP) {
+        uint32_t dt = now - anim_t0;
+        if (dt < 560u) {
+            int32_t upto = (int32_t)((float)NKEYS * (float)dt / 300.0f);
+            for (i = 0; i < upto && i < NKEYS; i++) bright_k |= 1u << i;
+        } else anim_kind = ANIM_NONE;
+    } else if (anim_kind == ANIM_BLINK) {
+        uint32_t dt = now - anim_t0;
+        if (dt < 420u) {
+            if ((dt / 90u) & 1u) bright_b |= 1u << PAGE_BTN[page];
+        } else anim_kind = ANIM_NONE;
+    }
+
+    dim_b |= 1u << PAGE_BTN[page];                 /* where we are */
+    if (octave > 0) dim_b |= 1u << B_OCTUP;
+    if (octave < 0) dim_b |= 1u << B_OCTDN;
+
+    plat_lights(bright_b, bright_k, dim_b, dim_k, 2);
+}
+
 /* ---------------------------------------------------------------- storage --- */
 #define SAVE_MAGIC 0x504C4E32u   /* "PLN2" */
 typedef struct { uint32_t magic; uint16_t ver; uint16_t idx; patch_t p; } saved_t;
@@ -677,16 +732,17 @@ void app_frame(void)
     int32_t d;
     int i;
 
+    uint32_t now = plat_ms();
     btn_prev = btns;
     key_edges(keys);
     plat_lights(0, keys, 0, 0, 1);
 
     if (pressed & (1u << B_SEL)) selected = (uint8_t)((selected + 1) % NGEN);
-    if (pressed & (1u << B_EDIT)) page = (uint8_t)((page + 1) % NPAGES);
-    if (pressed & (1u << B_HOME)) { page = PAGE_GEN; selected = 0; }
+    if (pressed & (1u << B_EDIT)) { page = (uint8_t)((page + 1) % NPAGES); anim_start(ANIM_BLINK, now); }
+    if (pressed & (1u << B_HOME)) { page = PAGE_GEN; selected = 0; anim_start(ANIM_BLINK, now); }
     if (pressed & (1u << B_OCTUP)) { if (octave < 2) octave++; }
     if (pressed & (1u << B_OCTDN)) { if (octave > -2) octave--; }
-    if (pressed & (1u << B_SAVE)) patch_save();
+    if (pressed & (1u << B_SAVE)) { patch_save(); anim_start(ANIM_SWEEP, now); }
 
     d = plat_enc(EN_K1);
     if (d) {
@@ -701,6 +757,7 @@ void app_frame(void)
             P.lfo_shape = (uint8_t)((P.lfo_shape + (d > 0 ? 1 : 3)) & 3);
         } else {
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 7)) & 7));
+            anim_start(ANIM_SWEEP, now);
         }
     }
     d = plat_enc(EN_K2);
@@ -722,6 +779,7 @@ void app_frame(void)
         else if (page == PAGE_LFO) P.lfo_tgt = (uint8_t)(P.lfo_tgt ? 0 : 1);
     }
 
+    lights_frame(keys, pressed, now);
     draw();
 }
 
