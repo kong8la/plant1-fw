@@ -1,0 +1,4 @@
+base/
+app/build/
+app/web/
+*.log

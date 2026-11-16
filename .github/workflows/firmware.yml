@@ -1,0 +1,26 @@
+﻿name: firmware
+
+# Builds the package in GitHub's Ubuntu runner with the shared FM-1 builder
+# (JieLi Linux toolchain + AC79 SDK, then ./build.sh) and attests it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'build.sh'
+      - 'test.sh'
+      - '.github/workflows/firmware.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: zvenson/fm1-build/.github/workflows/build.yml@v1
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    with:
+      build: bash ./build.sh
+      test: bash ./test.sh
+      packages: app/build/*.fwsc
+

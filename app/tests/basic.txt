@@ -1,0 +1,9 @@
+wait 600
+# the keys play the FM voice: key 7 is C4
+key 7 down
+wait 60
+expect note 60
+shot key.png
+key 7 up
+wait 400
+expect note -1
