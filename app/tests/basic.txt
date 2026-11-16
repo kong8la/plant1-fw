@@ -1,23 +1,44 @@
 wait 600
-# the keys play the four-slot engine: key 7 is C4
+# keys play a preset: key 7 is C4
 key 7 down
 wait 60
 expect note 60
+expect voices 1
 key 7 up
 wait 400
 expect note -1
-# the panel: SEL picks a slot (all four, even off), EDIT changes page
+# SEL walks the four slots
 tap SEL
 wait 30
 expect sel 1
-expect genon 0
-# K1 on GEN sets the slot's type and turns it on
-turn K1 1
-wait 30
-expect genon 1
-expect gtype 2
-shot gen.png
+# EDIT walks GEN -> ENV -> LFO -> PATCH
 tap EDIT
 wait 30
 expect page 1
-shot filter.png
+tap EDIT
+wait 30
+expect page 2
+tap EDIT
+wait 30
+expect page 3
+# K1 on PATCH loads the next preset
+turn K1 1
+wait 30
+expect preset 1
+# back to GEN, K1 turns the selected slot on as ANALOG
+tap HOME
+wait 30
+expect page 0
+turn K1 1
+wait 30
+expect genon 1
+shot gen.png
+tap EDIT
+wait 30
+shot env.png
+tap EDIT
+wait 30
+shot lfo.png
+tap EDIT
+wait 30
+shot patch.png
