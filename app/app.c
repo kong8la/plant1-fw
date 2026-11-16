@@ -17,7 +17,7 @@
 enum { G_OFF, G_ANALOG, G_WT, G_FM, G_NOISE };
 enum { W_SAW, W_SQUARE, W_PULSE, W_SINE };
 enum { F_OFF, F_LP, F_HP, F_BP, F_NOTCH };
-enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_PRESET, NPAGES };
+enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_FX, PAGE_PRESET, NPAGES };
 enum { LFO_SIN, LFO_TRI, LFO_SAW, LFO_SQR };
 enum { LT_CUT, LT_TREM };
 
@@ -29,6 +29,11 @@ typedef struct {
     float pwm, morph, ratio, index, fb, color;
 } gen_t;
 
+#define FX_MAX 5
+enum { FX_OFF, FX_DRIVE, FX_CHORUS, FX_DELAY, FX_REVERB, FX_COMP };
+
+typedef struct { uint8_t on, type; float p1, p2, p3; } fx_t;
+
 typedef struct {
     gen_t gen[NGEN];
     uint8_t uni;
@@ -37,10 +42,11 @@ typedef struct {
     uint8_t lfo_shape, lfo_tgt;
     float lfo_rate, lfo_amt;
     float vol;
+    fx_t fx[FX_MAX];
 } patch_t;
 
 static patch_t P;
-static uint8_t selected, page, preset_index, octave;
+static uint8_t selected, page, preset_index, octave, fx_sel;
 
 /* the eight patches */
 #define G(on_, ty, wv, tb, ft, tn, lv, pn, cu, rs, pw, mo, ra, ix, fb, co) \
@@ -100,10 +106,27 @@ static const patch_t PRESETS[8] = {
 
 static const char *const PRESET_NAME[8] = {"INIT", "GLASS BELL", "FM BASS", "SUPER SAW", "PHASE PAD", "PLUCK", "ACID", "DARK CHOIR"};
 
+#define FXZ {0, FX_OFF, 0.0f, 0.0f, 0.0f}
+#define FXN(t, a, b, c) {1, (t), (a), (b), (c)}
+
+/* the chain each preset starts with: drive, chorus, delay, reverb, comp */
+static const fx_t FX_PRESET[8][FX_MAX] = {
+    { FXZ, FXZ, FXZ, FXZ, FXZ },                                                /* INIT */
+    { FXZ, FXZ, FXZ, FXN(FX_REVERB, 0.55f, 0.35f, 0.40f), FXZ },                /* GLASS BELL */
+    { FXN(FX_DRIVE, 0.35f, 0.45f, 0.45f), FXZ, FXZ, FXZ, FXZ },                 /* FM BASS */
+    { FXZ, FXN(FX_CHORUS, 0.45f, 0.55f, 0.45f), FXZ, FXN(FX_REVERB, 0.45f, 0.40f, 0.22f), FXZ }, /* SUPER SAW */
+    { FXZ, FXN(FX_CHORUS, 0.30f, 0.65f, 0.40f), FXN(FX_DELAY, 180.0f, 0.30f, 0.22f), FXN(FX_REVERB, 0.70f, 0.45f, 0.35f), FXZ }, /* PHASE PAD */
+    { FXZ, FXZ, FXN(FX_DELAY, 210.0f, 0.28f, 0.28f), FXN(FX_REVERB, 0.40f, 0.45f, 0.25f), FXZ }, /* PLUCK */
+    { FXN(FX_DRIVE, 0.55f, 0.50f, 0.55f), FXZ, FXN(FX_DELAY, 150.0f, 0.30f, 0.18f), FXZ, FXZ },  /* ACID */
+    { FXZ, FXN(FX_CHORUS, 0.22f, 0.60f, 0.30f), FXZ, FXN(FX_REVERB, 0.80f, 0.50f, 0.50f), FXZ }  /* DARK CHOIR */
+};
+
 static void preset_load(uint8_t i)
 {
     if (i >= 8) i = 0;
+    int k;
     P = PRESETS[i];
+    for (k = 0; k < FX_MAX; k++) P.fx[k] = FX_PRESET[i][k];
     preset_index = i;
 }
 
@@ -183,6 +206,144 @@ static float svf_run(svf_t *f, float x)
     case F_NOTCH: return x - f->k * v1;
     default: return x;
     }
+}
+
+/* ------------------------------------------------------------------ fx --- */
+#define DLY_N 12288     /* ~278 ms at 44.1 kHz */
+#define CHO_N 2048      /* ~46 ms */
+#define RV_N 1600
+#define RV_AP_N 600
+
+static int16_t dly_b[2][DLY_N];
+static int16_t cho_b[2][CHO_N];
+static int16_t rv_b[2][4][RV_N];
+static int16_t rv_ap_b[2][2][RV_AP_N];
+static uint32_t dly_i, cho_i, rv_i[2][4], rv_api[2][2];
+static float cho_ph, dly_lp[2], drv_lp[2], rv_lp[2], comp_env, comp_g;
+
+static float fx_read(const int16_t *b, uint32_t n, uint32_t i, float delay)
+{
+    float pos = (float)i - delay;
+    while (pos < 0.0f) pos += (float)n;
+    while (pos >= (float)n) pos -= (float)n;
+    {
+        uint32_t i0 = (uint32_t)pos;
+        float fr = pos - (float)i0;
+        uint32_t i1 = (i0 + 1u) % n;
+        return ((float)b[i0] + ((float)b[i1] - (float)b[i0]) * fr) * (1.0f / 32768.0f);
+    }
+}
+
+static void fx_write(int16_t *b, uint32_t n, uint32_t i, float x)
+{
+    int32_t v = (int32_t)(fm_clampf(x, -1.0f, 1.0f) * 32767.0f);
+    b[i % n] = (int16_t)v;
+}
+
+static float fx_drive(float x, fx_t *F)
+{
+    float g = 1.0f + F->p1 * 14.0f;
+    float y = fm_tanhf(x * g);
+    float tone = 0.02f + (1.0f - F->p2) * 0.5f;
+    drv_lp[0] += (y - drv_lp[0]) * tone;
+    return x + (drv_lp[0] - x) * F->p3;
+}
+
+static float fx_chorus(float x, int ch, fx_t *F)
+{
+    float rate = 0.05f + F->p1 * 4.95f;
+    float d = 0.012f + 0.010f * F->p2 * (0.5f + 0.5f * fm_sinf(cho_ph * FM_TWO_PI + (float)ch * 0.5f));
+    float y = fx_read(cho_b[ch], CHO_N, cho_i + (uint32_t)ch * 37u, d * SR);
+    fx_write(cho_b[ch], CHO_N, cho_i + (uint32_t)ch * 37u, x);
+    return x + y * F->p3;
+}
+
+static float fx_delay(float x, int ch, fx_t *F)
+{
+    float time = fm_clampf(F->p1, 10.0f, 280.0f) * 0.001f * SR;
+    float y = fx_read(dly_b[ch], DLY_N, dly_i, time);
+    fx_write(dly_b[ch], DLY_N, dly_i, x + y * F->p2);
+    return x + y * F->p3;
+}
+
+static float fx_reverb(float x, int ch, fx_t *F)
+{
+    static const uint16_t CL[4] = {1116, 1188, 1277, 1356};
+    static const uint16_t AP[2] = {225, 556};
+    float g = 0.70f + F->p1 * 0.23f;
+    float damp = 0.15f + F->p2 * 0.6f;
+    float sum = 0.0f;
+    int c;
+
+    for (c = 0; c < 4; c++) {
+        uint32_t i = rv_i[ch][c] % CL[c];
+        float y = (float)rv_b[ch][c][i] * (1.0f / 32768.0f);
+        rv_lp[ch] += (y - rv_lp[ch]) * (1.0f - damp);
+        rv_b[ch][c][i] = (int16_t)(fm_clampf(x + rv_lp[ch] * g, -1.0f, 1.0f) * 32767.0f);
+        sum += y;
+        rv_i[ch][c]++;
+    }
+    for (c = 0; c < 2; c++) {
+        uint32_t i = rv_api[ch][c] % AP[c];
+        float b = (float)rv_ap_b[ch][c][i] * (1.0f / 32768.0f);
+        float y = b - sum;
+        rv_ap_b[ch][c][i] = (int16_t)(fm_clampf(sum + b * 0.5f, -1.0f, 1.0f) * 32767.0f);
+        sum = y;
+        rv_api[ch][c]++;
+    }
+    return x + sum * F->p3 * 0.6f;
+}
+
+static float fx_comp(float x, fx_t *F)
+{
+    float a = fm_fabsf(x);
+    float thr = 0.02f + F->p1 * 0.5f;
+    float ratio = 1.0f + F->p2 * 19.0f;
+    comp_env += (a - comp_env) * 0.0008f;
+    if (comp_env > thr) {
+        float over = thr / (comp_env + 1e-6f);
+        comp_g += (over - comp_g) * 0.05f;
+        x = x * (1.0f - (1.0f - comp_g) * (1.0f - 1.0f / ratio)) * (1.0f + F->p3);
+    } else {
+        comp_g += (1.0f - comp_g) * 0.01f;
+    }
+    return x;
+}
+
+static void fx_run(float *L, float *R)
+{
+    int i;
+    for (i = 0; i < FX_MAX; i++) {
+        fx_t *F = &P.fx[i];
+        if (!F->on || F->type == FX_OFF) continue;
+        switch (F->type) {
+        case FX_DRIVE:
+            *L = fx_drive(*L, F);
+            *R = fx_drive(*R, F);
+            break;
+        case FX_CHORUS:
+            *L = fx_chorus(*L, 0, F);
+            *R = fx_chorus(*R, 1, F);
+            break;
+        case FX_DELAY:
+            *L = fx_delay(*L, 0, F);
+            *R = fx_delay(*R, 1, F);
+            break;
+        case FX_REVERB:
+            *L = fx_reverb(*L, 0, F);
+            *R = fx_reverb(*R, 1, F);
+            break;
+        case FX_COMP:
+            *L = fx_comp(*L, F);
+            *R = fx_comp(*R, F);
+            break;
+        default:
+            break;
+        }
+    }
+    dly_i++;
+    cho_i++;
+    cho_ph += 0.0001f;
 }
 
 /* ---------------------------------------------------------------- voices --- */
@@ -390,15 +551,60 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
             L += sl * e * vv->vel * 0.22f * trem;
             R += sr * e * vv->vel * 0.22f * trem;
         }
+        fx_run(&L, &R);
         lr[2 * i] = (int32_t)(L * gain);
         lr[2 * i + 1] = (int32_t)(R * gain);
+    }
+}
+
+/* ---------------------------------------------------------------- storage --- */
+#define SAVE_MAGIC 0x504C4E33u   /* "PLN3" */
+#define NSLOT 4
+
+typedef struct { uint8_t used, preset; patch_t p; } slot_t;
+typedef struct { uint32_t magic; uint16_t ver; uint8_t cur; uint8_t pad; slot_t slot[NSLOT]; } bank_t;
+
+static bank_t bank;
+static uint8_t slot_index;
+
+static void patch_save(void)
+{
+    bank.magic = SAVE_MAGIC;
+    bank.ver = 3;
+    bank.cur = slot_index;
+    bank.slot[slot_index].used = 1;
+    bank.slot[slot_index].preset = preset_index;
+    bank.slot[slot_index].p = P;
+    (void)plat_store_save(OBJ_SETTINGS, &bank, sizeof bank);
+}
+
+static int patch_load(void)
+{
+    int k;
+    if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 3 || bank.cur >= NSLOT) return 0;
+    slot_index = bank.cur;
+    if (!bank.slot[slot_index].used) return 0;
+    P = bank.slot[slot_index].p;
+    preset_index = bank.slot[slot_index].preset;
+    return 1;
+}
+
+/* PATCH page: K2 picks a slot, and loads it if something is stored there */
+static void slot_pick(int d)
+{
+    slot_index = (uint8_t)((slot_index + (d > 0 ? 1 : NSLOT - 1)) % NSLOT);
+    if (bank.magic == SAVE_MAGIC && bank.slot[slot_index].used) {
+        P = bank.slot[slot_index].p;
+        preset_index = bank.slot[slot_index].preset % 8;
     }
 }
 
 /* ------------------------------------------------------------------- UI --- */
 static const char *const GEN_NAME[5] = {"OFF", "ANALOG", "WAVETABLE", "FM", "NOISE"};
 static const char *const FTYPE_NAME[5] = {"OFF", "LP", "HP", "BP", "NOTCH"};
-static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "PATCH"};
+static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "FX", "PATCH"};
+static const char *const FX_NAME[6] = {"OFF", "DRIVE", "CHORUS", "DELAY", "REVERB", "COMP"};
 static const char *const LFO_NAME[4] = {"SIN", "TRI", "SAW", "SQR"};
 
 static void note_text(char *out, int32_t m)
@@ -592,14 +798,39 @@ static void draw(void)
         cv_text(8, 62, &FONT_T, P.lfo_tgt == LT_CUT ? "TARGET CUTOFF" : "TARGET TREMOLO", C_GRAY);
         cv_text(8, 76, &FONT_T, "K1 SHAPE K2 RATE K3 AMT K4 TGT", C_DIM);
         break;
+    case PAGE_FX:
+        for (i = 0; i < FX_MAX; i++) {
+            fx_t *F = &P.fx[i];
+            int32_t y = i * 14;
+            if (i == fx_sel) cv_rect(2, y, 236, 13, C_LINE);
+            cv_text(8, y + 1, &FONT_T, FX_NAME[F->type], F->on ? C_HI : C_DIM);
+            cv_text(96, y + 1, &FONT_T, F->on ? "ON" : "--", F->on ? C_HI : C_DIM);
+            cv_rect(130, y + 5, 90, 3, C_LINE);
+            if (F->on) cv_rect(130, y + 5, (int32_t)(fm_clampf(F->p3, 0.0f, 1.0f) * 90.0f), 3, C_GRAY);
+        }
+        {
+            fx_t *F = &P.fx[fx_sel];
+            num_text(v, (int32_t)(F->p1 * 100.0f));
+            cv_text(8, 76, &FONT_T, "A", C_GRAY); cv_text(20, 76, &FONT_T, v, C_HI);
+            num_text(v, (int32_t)(F->p2 * 100.0f));
+            cv_text(70, 76, &FONT_T, "B", C_GRAY); cv_text(82, 76, &FONT_T, v, C_HI);
+            num_text(v, (int32_t)(F->p3 * 100.0f));
+            cv_text(132, 76, &FONT_T, "C", C_GRAY); cv_text(144, 76, &FONT_T, v, C_HI);
+            cv_text(176, 76, &FONT_T, "FX=toggle", C_DIM);
+        }
+        break;
     default:
         cv_text(8, 2, &FONT_S, PRESET_NAME[preset_index], C_HI);
         num_text(v, preset_index + 1);
         cv_text(8, 24, &FONT_T, "PATCH", C_GRAY);
-        cv_text(54, 22, &FONT_S, v, C_HI);
-        cv_text(76, 24, &FONT_T, "/ 8", C_DIM);
-        cv_text(8, 44, &FONT_T, "K1 NEXT PRESET", C_DIM);
-        cv_text(8, 60, &FONT_T, "SAVE writes it to flash", C_DIM);
+        cv_text(48, 22, &FONT_S, v, C_HI);
+        cv_text(66, 24, &FONT_T, "/8", C_DIM);
+        num_text(v, slot_index + 1);
+        cv_text(104, 24, &FONT_T, "SLOT", C_GRAY);
+        cv_text(146, 22, &FONT_S, v, C_HI);
+        cv_text(164, 24, &FONT_T, "/4", C_DIM);
+        cv_text(8, 44, &FONT_T, "K1 PRESET  K2 SLOT", C_DIM);
+        cv_text(8, 60, &FONT_T, slot_index < NSLOT && bank.slot[slot_index].used ? "SAVE overwrite slot" : "SAVE store to slot", C_DIM);
         cv_text(8, 76, &FONT_T, "OCT+/- transpose", C_DIM);
         break;
     }
@@ -608,9 +839,9 @@ static void draw(void)
     /* page tabs */
     cv_begin(240, 18, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
-        int32_t x = 10 + i * 56;
+        int32_t x = 6 + i * 47;
         if (i == page) {
-            cv_rect(x - 4, 2, 50, 14, C_LINE);
+            cv_rect(x - 3, 2, 44, 14, C_LINE);
             cv_text(x, 4, &FONT_T, PAGE_NAME[i], C_HI);
         } else {
             cv_text(x, 4, &FONT_T, PAGE_NAME[i], C_DIM);
@@ -653,7 +884,7 @@ static void key_edges(uint32_t keys)
 static float key_glow[NKEYS];
 static uint32_t anim_t0, anim_kind;
 
-static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_SAVE};
+static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_FX, B_SAVE};
 
 static void anim_start(uint8_t kind, uint32_t now)
 {
@@ -700,30 +931,6 @@ static void lights_frame(uint32_t keys, uint32_t pressed, uint32_t now)
     plat_lights(bright_b, bright_k, dim_b, dim_k, 2);
 }
 
-/* ---------------------------------------------------------------- storage --- */
-#define SAVE_MAGIC 0x504C4E32u   /* "PLN2" */
-typedef struct { uint32_t magic; uint16_t ver; uint16_t idx; patch_t p; } saved_t;
-
-static void patch_save(void)
-{
-    saved_t s;
-    s.magic = SAVE_MAGIC;
-    s.ver = 2;
-    s.idx = preset_index;
-    s.p = P;
-    (void)plat_store_save(OBJ_SETTINGS, &s, sizeof s);
-}
-
-static int patch_load(void)
-{
-    saved_t s;
-    if (plat_store_load(OBJ_SETTINGS, &s, sizeof s) != (int)sizeof s) return 0;
-    if (s.magic != SAVE_MAGIC || s.ver != 2 || s.idx >= 8) return 0;
-    P = s.p;
-    preset_index = s.idx;
-    return 1;
-}
-
 void app_frame(void)
 {
     static uint32_t btn_prev;
@@ -743,10 +950,17 @@ void app_frame(void)
     if (pressed & (1u << B_OCTUP)) { if (octave < 2) octave++; }
     if (pressed & (1u << B_OCTDN)) { if (octave > -2) octave--; }
     if (pressed & (1u << B_SAVE)) { patch_save(); anim_start(ANIM_SWEEP, now); }
+    if (pressed & (1u << B_FX) && page == PAGE_FX) {
+        fx_t *F = &P.fx[fx_sel];
+        F->on = (uint8_t)!F->on;
+        if (F->on && F->type == FX_OFF) F->type = FX_DRIVE;
+    }
 
     d = plat_enc(EN_K1);
     if (d) {
-        if (page == PAGE_GEN) {
+        if (page == PAGE_FX) {
+            fx_sel = (uint8_t)((fx_sel + (d > 0 ? 1 : FX_MAX - 1)) % FX_MAX);
+        } else if (page == PAGE_GEN) {
             gen_t *G = &P.gen[selected];
             G->type = (uint8_t)(((G->type - 1 + (d > 0 ? 1 : 3)) % 4) + 1);
             G->on = 1;
@@ -762,19 +976,28 @@ void app_frame(void)
     }
     d = plat_enc(EN_K2);
     if (d) {
-        if (page == PAGE_GEN) P.gen[selected].level = fm_clampf(P.gen[selected].level + (float)d * 0.02f, 0.0f, 1.0f);
+        if (page == PAGE_FX) {
+            fx_t *F = &P.fx[fx_sel];
+            if (!F->on) { F->on = 1; if (F->type == FX_OFF) F->type = FX_DRIVE; }
+            F->p1 = fm_clampf(F->p1 + (float)d * 0.02f, 0.0f, 1.0f);
+        } else if (page == PAGE_PRESET) slot_pick(d > 0 ? 1 : -1);
+        else if (page == PAGE_GEN) P.gen[selected].level = fm_clampf(P.gen[selected].level + (float)d * 0.02f, 0.0f, 1.0f);
         else if (page == PAGE_ENV) P.d_ms = fm_clampf(P.d_ms * fm_exp2f((float)d * 0.35f), 5.0f, 4000.0f);
         else if (page == PAGE_LFO) P.lfo_rate = fm_clampf(P.lfo_rate * fm_exp2f((float)d * 0.35f), 0.05f, 10.0f);
     }
     d = plat_enc(EN_K3);
     if (d) {
-        if (page == PAGE_GEN) P.gen[selected].pan = fm_clampf(P.gen[selected].pan + (float)d * 0.05f, -1.0f, 1.0f);
+        if (page == PAGE_FX) {
+            P.fx[fx_sel].p2 = fm_clampf(P.fx[fx_sel].p2 + (float)d * 0.02f, 0.0f, 1.0f);
+        } else if (page == PAGE_GEN) P.gen[selected].pan = fm_clampf(P.gen[selected].pan + (float)d * 0.05f, -1.0f, 1.0f);
         else if (page == PAGE_ENV) P.s = fm_clampf(P.s + (float)d * 0.03f, 0.0f, 1.0f);
         else if (page == PAGE_LFO) P.lfo_amt = fm_clampf(P.lfo_amt + (float)d * 0.05f, 0.0f, 1.0f);
     }
     d = plat_enc(EN_K4);
     if (d) {
-        if (page == PAGE_GEN) P.gen[selected].tune = (int8_t)clamp((int32_t)P.gen[selected].tune + (d > 0 ? 1 : -1), -24, 24);
+        if (page == PAGE_FX) {
+            P.fx[fx_sel].p3 = fm_clampf(P.fx[fx_sel].p3 + (float)d * 0.02f, 0.0f, 1.0f);
+        } else if (page == PAGE_GEN) P.gen[selected].tune = (int8_t)clamp((int32_t)P.gen[selected].tune + (d > 0 ? 1 : -1), -24, 24);
         else if (page == PAGE_ENV) P.r_ms = fm_clampf(P.r_ms * fm_exp2f((float)d * 0.35f), 5.0f, 6000.0f);
         else if (page == PAGE_LFO) P.lfo_tgt = (uint8_t)(P.lfo_tgt ? 0 : 1);
     }
@@ -791,6 +1014,8 @@ void app_init(void)
     tables_build();
     for (i = 0; i < NV; i++) { V[i].active = 0; V[i].stage = 0; }
     selected = 0; page = PAGE_GEN; octave = 0; preset_index = 0;
+    bank.magic = 0;
+    slot_index = 0;
     preset_load(0);
     (void)patch_load();
 }
@@ -828,6 +1053,10 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "preset")) { *got = preset_index; return 1; }
     if (!strcmp(what, "filt")) { *got = P.gen[selected].ftype; return 1; }
     if (!strcmp(what, "genon")) { *got = P.gen[selected].on; return 1; }
+    if (!strcmp(what, "fxon")) { *got = P.fx[fx_sel].on; return 1; }
+    if (!strcmp(what, "fxtype")) { *got = P.fx[fx_sel].type; return 1; }
+    if (!strcmp(what, "fxsel")) { *got = fx_sel; return 1; }
+    if (!strcmp(what, "slot")) { *got = slot_index; return 1; }
     return 0;
 }
 #endif

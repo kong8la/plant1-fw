@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MIT
- * PLANT-1 M2: presets, envelopes, an LFO, patch storage, and a screen that shows the sound. */
+ * PLANT-1 M3: a five-slot effect chain, FX page, and four patch slots. */
 #pragma once
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "PLANT1M2"
+#define APP_NAME "PLANT1M3"
 #define APP_SPLASH_RGB RGB(56, 189, 248)
 #define APP_BLOCK 256u
 

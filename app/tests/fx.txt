@@ -1,0 +1,28 @@
+wait 300
+# the FX page: five slots, FX toggles the selected one
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 3
+expect fxtype 0
+expect fxsel 0
+tap FX
+wait 30
+expect fxon 1
+expect fxtype 1
+# K2 is its first parameter, K1 walks the chain
+turn K2 4
+wait 30
+turn K1 1
+wait 30
+expect fxsel 1
+shot fx.png
+# the PATCH page: K2 walks the four flash slots
+tap EDIT
+wait 30
+expect page 4
+turn K2 1
+wait 30
+expect slot 1
+shot patch.png

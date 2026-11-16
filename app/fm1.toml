@@ -1,15 +1,15 @@
-# PLANT-1 M2 build settings (tools/build.py)
-name = "PLANT1M2"
-id_prefix = "FM-1_92"          # dev identity FM-1_9200
+# PLANT-1 M3 build settings (tools/build.py)
+name = "PLANT1M3"
+id_prefix = "FM-1_93"          # dev identity FM-1_9300
 usb_manufacturer = "PLANT-1"
-usb_product = "PLANT1 M2 FM-1"
+usb_product = "PLANT1 M3 FM-1"
 o2 = []
 words = "words.tsv"
 ble = false
 licence = "MIT"
-tagline = "PLANT-1 M2: presets, envelopes and an LFO on the FM-1"
+tagline = "PLANT-1 M3: an effect chain on the FM-1"
 repo = "https://github.com/kong8la/plant1-fw"
 author = "kong8la"
-description = "PLANT-1 M2: four generator slots, a filter per slot, unison, six voices, eight presets, an editable ADSR with its curve, an LFO with its shape, and patches that survive a power cycle."
+description = "PLANT-1 M3: four generator slots, a filter per slot, unison, six voices, eight presets, envelopes, an LFO, a five-slot effect chain (drive, chorus, delay, reverb, compressor), and four patch slots in flash."
 tags = ["synth"]
 credits = "built on fm1-base"

@@ -11,7 +11,7 @@ expect note -1
 tap SEL
 wait 30
 expect sel 1
-# EDIT walks GEN -> ENV -> LFO -> PATCH
+# EDIT walks GEN -> ENV -> LFO -> FX -> PATCH
 tap EDIT
 wait 30
 expect page 1
@@ -21,10 +21,14 @@ expect page 2
 tap EDIT
 wait 30
 expect page 3
+tap EDIT
+wait 30
+expect page 4
 # K1 on PATCH loads the next preset
 turn K1 1
 wait 30
 expect preset 1
+shot patch.png
 # back to GEN, K1 turns the selected slot on as ANALOG
 tap HOME
 wait 30
@@ -33,12 +37,3 @@ turn K1 1
 wait 30
 expect genon 1
 shot gen.png
-tap EDIT
-wait 30
-shot env.png
-tap EDIT
-wait 30
-shot lfo.png
-tap EDIT
-wait 30
-shot patch.png

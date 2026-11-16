@@ -1,0 +1,17 @@
+wait 300
+# PATCH page: preset 2 is GLASS BELL (reverb on)
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+turn K1 1
+wait 60
+# a short note, then the tail
+key 7 down
+wait 120
+key 7 up
+wait 250
+wav tail.wav
+wait 900
+wavstop
