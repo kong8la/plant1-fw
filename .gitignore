@@ -2,3 +2,5 @@ base/
 app/build/
 app/web/
 *.log
+dist-fw/
+
