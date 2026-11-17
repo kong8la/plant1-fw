@@ -1442,61 +1442,48 @@ static void draw(void)
     cv_begin(240, 84, C_BLACK);
     draw_card(2, 1, 236, 82, RGB(20, 28, 36));
     switch (page) {
-    case PAGE_GEN:
-        if (gen_mode == 1) {
-            gen_t *G = &P.gen[selected];
-            static const char *const LBL[5][4] = {
-                {"-", "-", "-", "-"},
-                {"WAVE", "PWM", "CUT", "RES"},
-                {"TABLE", "MORPH", "CUT", "RES"},
-                {"RATIO", "INDEX", "FB", "CUT"},
-                {"COLOR", "CUT", "RES", "LEVEL"}
-            };
-            float val[4];
-            int k;
-            cv_text(8, 2, &FONT_T, "ENGINE", C_GRAY);
-            num_text(v, selected + 1);
-            cv_text(52, 2, &FONT_T, "G", C_DIM);
-            cv_text(60, 2, &FONT_T, v, C_HI);
-            cv_text(76, 2, &FONT_T, GEN_NAME[G->type], C_WHITE);
-            if (G->type == G_ANALOG) {
-                val[0] = (float)G->wave; val[1] = G->pwm * 100.0f; val[2] = G->cut; val[3] = G->res * 100.0f;
-            } else if (G->type == G_WT) {
-                val[0] = (float)G->table; val[1] = G->morph * 100.0f; val[2] = G->cut; val[3] = G->res * 100.0f;
-            } else if (G->type == G_FM) {
-                val[0] = G->ratio * 100.0f; val[1] = G->index * 100.0f; val[2] = G->fb * 100.0f; val[3] = G->cut;
-            } else {
-                val[0] = G->color * 100.0f; val[1] = G->cut; val[2] = G->res * 100.0f; val[3] = G->level * 100.0f;
-            }
-            for (k = 0; k < 4; k++) {
-                int32_t cx = 2 + (k & 1) * 119;
-                int32_t cy = 16 + (k >> 1) * 34;
-                draw_card(cx, cy, 117, 30, RGB(22, 31, 40));
-                cv_text(cx + 6, cy + 3, &FONT_T, LBL[G->type][k], C_GRAY);
-                num_text(v, (int32_t)val[k]);
-                cv_text(cx + 6, cy + 13, &FONT_S, v, C_HI);
-            }
-            break;
-        }
-        cv_text(8, 2, &FONT_T, "LEVEL", C_GRAY);
-        num_text(v, (int32_t)(P.gen[selected].level * 100.0f));
-        cv_text(60, 0, &FONT_S, v, C_HI);
-        cv_text(120, 2, &FONT_T, "CUT", C_GRAY);
-        num_text(v, (int32_t)P.gen[selected].cut);
-        cv_text(160, 0, &FONT_S, v, C_HI);
-        cv_text(8, 26, &FONT_T, "TUNE", C_GRAY);
-        num_text(v, (int32_t)P.gen[selected].tune);
-        cv_text(60, 24, &FONT_S, v, C_HI);
-        cv_text(120, 28, &FONT_T, "K1 TYPE K2 LVL", C_DIM);
-        cv_text(8, 50, &FONT_T, "K3 PAN  K4 TUNE", C_DIM);
+    case PAGE_GEN: {
+        gen_t *G = &P.gen[selected];
+        static const char *const LBL[5][4] = {
+            {"-", "-", "-", "-"},
+            {"WAVE", "PWM", "CUT", "RES"},
+            {"TABLE", "MORPH", "CUT", "RES"},
+            {"RATIO", "INDEX", "FB", "CUT"},
+            {"COLOR", "CUT", "RES", "LEVEL"}
+        };
+        static const char *const WAV[4] = {"SAW", "SQR", "PULSE", "SINE"};
+        float val[4];
+        char txt[8];
+        int k;
+        cv_text(8, 0, &FONT_T, "ENGINE", C_GRAY);
         num_text(v, selected + 1);
-        cv_text(8, 66, &FONT_T, "SLOT", C_DIM);
-        cv_text(38, 66, &FONT_T, v, C_GRAY);
-        cv_text(52, 66, &FONT_T, "/4", C_DIM);
-        num_text(v, octave);
-        cv_text(96, 66, &FONT_T, "OCT", C_DIM);
-        cv_text(126, 66, &FONT_T, v, C_GRAY);
+        cv_text(52, 1, &FONT_T, "G", C_DIM);
+        cv_text(60, 1, &FONT_T, v, C_HI);
+        cv_text(76, 1, &FONT_T, GEN_NAME[G->type], C_WHITE);
+        if (G->ftype) cv_text(170, 1, &FONT_T, FTYPE_NAME[G->ftype], C_GRAY);
+        if (G->type == G_ANALOG) {
+            val[0] = (float)G->wave; val[1] = G->pwm * 100.0f; val[2] = G->cut; val[3] = G->res * 100.0f;
+        } else if (G->type == G_WT) {
+            val[0] = (float)G->table; val[1] = G->morph * 100.0f; val[2] = G->cut; val[3] = G->res * 100.0f;
+        } else if (G->type == G_FM) {
+            val[0] = G->ratio * 100.0f; val[1] = G->index * 100.0f; val[2] = G->fb * 100.0f; val[3] = G->cut;
+        } else {
+            val[0] = G->color * 100.0f; val[1] = G->cut; val[2] = G->res * 100.0f; val[3] = G->level * 100.0f;
+        }
+        for (k = 0; k < 4; k++) {
+            int32_t cx = 2 + (k & 1) * 119;
+            int32_t cy = 14 + (k >> 1) * 34;
+            draw_card(cx, cy, 117, 32, k == 0 && gen_mode ? C_HI : RGB(22, 31, 40));
+            cv_text(cx + 6, cy + 3, &FONT_T, LBL[G->type][k], C_GRAY);
+            if (G->type == G_ANALOG && k == 0) {
+                cv_text(cx + 6, cy + 13, &FONT_S, WAV[G->wave & 3], C_HI);
+            } else {
+                num_text(txt, (int32_t)val[k]);
+                cv_text(cx + 6, cy + 13, &FONT_S, txt, C_HI);
+            }
+        }
         break;
+    }
     case PAGE_ENV: {
         float ea = env_sel ? P.e2a : P.a_ms, ed = env_sel ? P.e2d : P.d_ms;
         float es = env_sel ? P.e2s : P.s, er = env_sel ? P.e2r : P.r_ms;
@@ -1733,9 +1720,9 @@ static void draw(void)
         cv_begin(240, 12, C_BLACK);
         if (osd_kind == 1) {
             num_text(v, preset_index + 1);
-            cv_text(8, 1, &FONT_T, "PRESET", C_HI);
-            cv_text(58, 1, &FONT_T, v, C_WHITE);
-            cv_text(84, 1, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
+            cv_text(8, 0, &FONT_T, "PRESET", C_HI);
+            cv_text(58, 0, &FONT_T, v, C_WHITE);
+            cv_text(84, 0, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
         } else if (osd_kind == 2) {
             num_text(v, selected + 1);
             cv_text(8, 3, &FONT_T, "SLOT", C_HI);
@@ -1748,33 +1735,33 @@ static void draw(void)
             cv_text(8, 3, &FONT_T, "PANIC", C_HI);
             cv_text(52, 3, &FONT_T, "all notes off", C_GRAY);
         } else if (osd_kind == 10) {
-            cv_text(8, 3, &FONT_T, "MOTIF", C_HI);
-            cv_text(52, 3, &FONT_T, P.motif_mode == 0 ? "STYLE" : P.motif_mode == 1 ? "EUCLID" : "GROOVE", C_WHITE);
+            cv_text(8, 0, &FONT_T, "MOTIF", C_HI);
+            cv_text(52, 0, &FONT_T, P.motif_mode == 0 ? "STYLE" : "EUCLID", C_WHITE);
         } else if (osd_kind == 11) {
-            cv_text(8, 3, &FONT_T, "CHORD", C_HI);
-            cv_text(52, 3, &FONT_T, P.chord ? "ON" : "OFF", C_WHITE);
+            cv_text(8, 0, &FONT_T, "CHORD", C_HI);
+            cv_text(52, 0, &FONT_T, P.chord ? "ON" : "OFF", C_WHITE);
         } else if (osd_kind == 12) {
-            cv_text(8, 3, &FONT_T, "MUTATE", C_HI);
-            cv_text(58, 3, &FONT_T, "a variation of the pattern", C_GRAY);
+            cv_text(8, 0, &FONT_T, "MUTATE", C_HI);
+            cv_text(58, 0, &FONT_T, "a variation of the pattern", C_GRAY);
         } else if (osd_kind == 13) {
-            cv_text(8, 1, &FONT_T, "ENGINE", C_HI);
-            cv_text(52, 1, &FONT_T, gen_mode ? "PARAMS" : "CARDS", C_WHITE);
+            cv_text(8, 0, &FONT_T, "ENGINE", C_HI);
+            cv_text(52, 0, &FONT_T, "PARAMS", C_WHITE);
         } else if (osd_kind == 14) {
-            cv_text(8, 1, &FONT_T, "SEQ", C_HI);
-            cv_text(36, 1, &FONT_T, seq_mode == 0 ? "STEP" : seq_mode == 1 ? "SHAPE" : "GROOVE", C_WHITE);
+            cv_text(8, 0, &FONT_T, "SEQ", C_HI);
+            cv_text(36, 0, &FONT_T, seq_mode == 0 ? "STEP" : seq_mode == 1 ? "SHAPE" : "GROOVE", C_WHITE);
         } else if (osd_kind >= 6) {
             int k = osd_kind - 6;
-            cv_text(8, 3, &FONT_T, "K", C_HI);
+            cv_text(8, 0, &FONT_T, "K", C_HI);
             num_text(v, k + 1);
-            cv_text(20, 3, &FONT_T, v, C_HI);
-            cv_text(34, 3, &FONT_T, K_LABEL[page][k], C_WHITE);
+            cv_text(20, 0, &FONT_T, v, C_HI);
+            cv_text(34, 0, &FONT_T, K_LABEL[page][k], C_WHITE);
         } else {
             cv_text(8, 3, &FONT_T, "SAVE", C_HI);
             cv_text(40, 3, &FONT_T, "stored to slot", C_GRAY);
             num_text(v, slot_index + 1);
             cv_text(140, 3, &FONT_T, v, C_WHITE);
         }
-        cv_blit(0, 28);
+        cv_blit(0, 15);
     }
 
     /* the page-change sweep: a thin accent line inside the page band */
@@ -2223,11 +2210,6 @@ void app_frame(void)
                         P.chord = (uint8_t)!P.chord;
                         osd_kind = 11; osd_until = now + 900u;
                     }
-                    break;
-                case B_SEL:
-                    gen_mode = (uint8_t)!gen_mode;
-                    page = PAGE_GEN;
-                    osd_kind = 13; osd_until = now + 900u;
                     break;
                 case B_GLO: {
                     if (page == PAGE_MOTIF) {
