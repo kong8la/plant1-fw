@@ -1,0 +1,37 @@
+wait 300
+# PATCH page
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+# GLASS BELL (2nd preset): reverb tail
+turn K1 1
+wait 30
+key 7 down
+wait 200
+key 7 up
+wav r1.wav
+wait 1200
+wavstop
+# FM BASS (3rd): drive + comp
+turn K1 1
+wait 30
+key 7 down
+wait 200
+key 7 up
+wav r2.wav
+wait 1200
+wavstop
+# SUPER SAW (4th): chorus + reverb
+turn K1 1
+wait 30
+key 7 down
+wait 200
+key 7 up
+wav r3.wav
+wait 1200
+wavstop

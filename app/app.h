@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "PLANT1M8"
+#define APP_NAME "PLANT1M9"
 #define APP_SPLASH_RGB RGB(56, 189, 248)
 #define APP_BLOCK 256u
 

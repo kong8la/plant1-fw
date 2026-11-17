@@ -8,7 +8,7 @@
 
 /* ------------------------------------------------------------- constants --- */
 #define SR 44100.0f
-#define NV 6
+#define NV 4
 #define NGEN 4
 #define UNI_MAX 3
 #define WT_N 256
@@ -525,7 +525,8 @@ static float fx_read(const int16_t *b, uint32_t n, uint32_t i, float delay)
 static void fx_write(int16_t *b, uint32_t n, uint32_t i, float x)
 {
     int32_t v = (int32_t)(fm_clampf(x, -1.0f, 1.0f) * 32767.0f);
-    b[i % n] = (int16_t)v;
+    while (i >= n) i -= n;
+    b[i] = (int16_t)v;
 }
 
 static float fx_drive(float x, fx_t *F)
@@ -534,7 +535,7 @@ static float fx_drive(float x, fx_t *F)
     float y = fm_tanhf(x * g);
     float tone = 0.02f + (1.0f - F->p2) * 0.5f;
     drv_lp[0] += (y - drv_lp[0]) * tone;
-    return x + (drv_lp[0] - x) * F->p3;
+    return x + (drv_lp[0] - x) * F->p3 * 0.9f;
 }
 
 static float fx_chorus(float x, int ch, fx_t *F)
@@ -550,7 +551,7 @@ static float fx_delay(float x, int ch, fx_t *F)
 {
     float time = (10.0f + F->p1 * 120.0f) * 0.001f * SR;
     float y = fx_read(dly_b[ch], DLY_N, dly_i, time);
-    fx_write(dly_b[ch], DLY_N, dly_i, x + y * F->p2);
+    fx_write(dly_b[ch], DLY_N, dly_i, x + y * F->p2 * 0.75f);
     return x + y * F->p3;
 }
 
@@ -558,28 +559,31 @@ static float fx_reverb(float x, int ch, fx_t *F)
 {
     static const uint16_t CL[4] = {1116, 1145, 1188, 1219};
     static const uint16_t AP[2] = {225, 480};
-    float g = 0.70f + F->p1 * 0.23f;
-    float damp = 0.15f + F->p2 * 0.6f;
+    float g = 0.60f + F->p1 * 0.20f;
+    float damp = 0.20f + F->p2 * 0.6f;
+    float in = x * 0.22f;
     float sum = 0.0f;
     int c;
 
     for (c = 0; c < 4; c++) {
-        uint32_t i = rv_i[ch][c] % CL[c];
+        uint32_t i = rv_i[ch][c];
+        if (i >= CL[c]) { i = 0; rv_i[ch][c] = 0; }
         float y = (float)rv_b[ch][c][i] * (1.0f / 32768.0f);
         rv_lp[ch] += (y - rv_lp[ch]) * (1.0f - damp);
-        rv_b[ch][c][i] = (int16_t)(fm_clampf(x + rv_lp[ch] * g, -1.0f, 1.0f) * 32767.0f);
+        rv_b[ch][c][i] = (int16_t)(fm_clampf(in + rv_lp[ch] * g, -1.0f, 1.0f) * 32767.0f);
         sum += y;
         rv_i[ch][c]++;
     }
     for (c = 0; c < 2; c++) {
-        uint32_t i = rv_api[ch][c] % AP[c];
+        uint32_t i = rv_api[ch][c];
+        if (i >= AP[c]) { i = 0; rv_api[ch][c] = 0; }
         float b = (float)rv_ap_b[ch][c][i] * (1.0f / 32768.0f);
         float y = b - sum;
         rv_ap_b[ch][c][i] = (int16_t)(fm_clampf(sum + b * 0.5f, -1.0f, 1.0f) * 32767.0f);
         sum = y;
         rv_api[ch][c]++;
     }
-    return x + sum * F->p3 * 0.6f;
+    return x + sum * F->p3 * 0.22f;
 }
 
 static float fx_comp(float x, fx_t *F)
@@ -644,10 +648,13 @@ typedef struct {
     float fbprev[NGEN];
     float pink[NGEN];
     float env, env2, lfo_ph, lfo2_ph, lfo_val, lfo2_val, mod[NGEN * 3];
+    float inc[NGEN][UNI_MAX];
+    float panL[NGEN][UNI_MAX], panR[NGEN][UNI_MAX];
     svf_t filt[NGEN];
 } voice_t;
 
 static voice_t V[NV];
+static float env_k_a, env_k_d, env_k_r, env2_k_a, env2_k_d, env2_k_r;
 static uint32_t seed = 0x9E3779B9u, note_counter;
 
 static float frand(void)
@@ -669,18 +676,18 @@ static float env_tick(voice_t *v)
 {
     switch (v->stage) {
     case 1:
-        v->env += (1.0f - v->env) * ENV_K(P.a_ms);
+        v->env += (1.0f - v->env) * env_k_a;
         if (v->env >= 0.999f) { v->env = 1.0f; v->stage = 2; }
         break;
     case 2:
-        v->env += (P.s - v->env) * ENV_K(P.d_ms);
+        v->env += (P.s - v->env) * env_k_d;
         if (v->env <= P.s + 0.001f) { v->env = P.s; v->stage = 3; }
         break;
     case 3:
         v->env = P.s;
         break;
     case 4:
-        v->env += (0.0f - v->env) * ENV_K(P.r_ms);
+        v->env += (0.0f - v->env) * env_k_r;
         if (v->env < 0.0005f) { v->env = 0.0f; v->stage = 0; }
         break;
     default:
@@ -699,18 +706,18 @@ static float env2_tick(voice_t *v)
         st = 1;
         /* fall through */
     case 1:
-        v->env2 += (1.0f - v->env2) * ENV_K(P.e2a);
+        v->env2 += (1.0f - v->env2) * env2_k_a;
         if (v->env2 >= 0.999f) { v->env2 = 1.0f; st = 2; }
         break;
     case 2:
-        v->env2 += (P.e2s - v->env2) * ENV_K(P.e2d);
+        v->env2 += (P.e2s - v->env2) * env2_k_d;
         if (v->env2 <= P.e2s + 0.001f) { v->env2 = P.e2s; st = 3; }
         break;
     case 3:
         v->env2 = P.e2s;
         break;
     case 4:
-        v->env2 += (0.0f - v->env2) * ENV_K(P.e2r);
+        v->env2 += (0.0f - v->env2) * env2_k_r;
         if (v->env2 < 0.0005f) { v->env2 = 0.0f; st = 0; }
         break;
     }
@@ -759,21 +766,15 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
 {
     int g, u;
     float mixL = 0.0f, mixR = 0.0f;
-    float base = 8.1757989f * fm_exp2f(v->freq * (1.0f / 12.0f));
 
     for (g = 0; g < NGEN; g++) {
         gen_t *G = &P.gen[g];
         float sumL = 0.0f, sumR = 0.0f;
-        float freq;
         if (!G->on || G->type == G_OFF || G->level <= 0.0f) continue;
-        freq = base * fm_exp2f(((float)G->tune + v->mod[g * 3 + DST_PITCH] * 24.0f) * (1.0f / 12.0f));
         for (u = 0; u < P.uni; u++) {
-            float sp = P.uni == 1 ? 0.0f : ((float)u / (float)(P.uni - 1) * 2.0f - 1.0f);
-            float fu = freq * fm_exp2f(sp * P.detune * (1.0f / 1200.0f));
-            float dt = fu / SR;
+            float dt = v->inc[g][u];
             float ph = v->phase[g][u];
             float s = 0.0f;
-            float pan = fm_clampf(G->pan + sp * P.spread, -1.0f, 1.0f);
             if (G->type == G_ANALOG) {
                 if (G->wave == W_SAW) s = 2.0f * ph - 1.0f - polyblep(ph, dt);
                 else if (G->wave == W_SQUARE) {
@@ -814,8 +815,8 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
                 ph += dt; if (ph >= 1.0f) ph -= 1.0f;
             }
             v->phase[g][u] = ph;
-            sumL += s * (0.7071f + 0.2929f * pan);
-            sumR += s * (0.7071f - 0.2929f * pan);
+            sumL += s * v->panL[g][u];
+            sumR += s * v->panR[g][u];
         }
         if (P.uni > 1) { sumL *= 0.7071f; sumR *= 0.7071f; }
         if (G->ftype) {
@@ -842,6 +843,8 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
     float ldt = (float)n / SR;
 
     if (!ready) tables_build();
+    env_k_a = ENV_K(P.a_ms); env_k_d = ENV_K(P.d_ms); env_k_r = ENV_K(P.r_ms);
+    env2_k_a = ENV_K(P.e2a); env2_k_d = ENV_K(P.e2d); env2_k_r = ENV_K(P.e2r);
 
     for (v = 0; v < NV; v++) {
         voice_t *vv = &V[v];
@@ -864,6 +867,24 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         for (r = 0; r < NROUTE; r++)
             if (P.route[r].on && P.route[r].dst < NGEN * 3)
                 vv->mod[P.route[r].dst] += src[P.route[r].src & 7] * P.route[r].amt;
+        {
+            float base = 8.1757989f * fm_exp2f(vv->freq * (1.0f / 12.0f));
+            for (g = 0; g < NGEN; g++) {
+                gen_t *G = &P.gen[g];
+                float f;
+                int u;
+                if (!G->on || G->type == G_OFF) continue;
+                f = base * fm_exp2f(((float)G->tune + vv->mod[g * 3 + DST_PITCH] * 24.0f) * (1.0f / 12.0f));
+                for (u = 0; u < P.uni; u++) {
+                    float sp = P.uni == 1 ? 0.0f : ((float)u / (float)(P.uni - 1) * 2.0f - 1.0f);
+                    float fu = f * fm_exp2f(sp * P.detune * (1.0f / 1200.0f));
+                    float pan = fm_clampf(G->pan + sp * P.spread, -1.0f, 1.0f);
+                    vv->inc[g][u] = fu / SR;
+                    vv->panL[g][u] = 0.7071f + 0.2929f * pan;
+                    vv->panR[g][u] = 0.7071f - 0.2929f * pan;
+                }
+            }
+        }
         for (g = 0; g < NGEN; g++) {
             gen_t *G = &P.gen[g];
             float cut = G->cut;
@@ -888,14 +909,17 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
             if (vv->stage == 0) { vv->active = 0; continue; }
             if (P.lfo_tgt == LT_TREM) trem = 1.0f + vv->lfo_val * 0.5f;
             voice_sample(vv, &sl, &sr);
-            L += sl * e * vv->vel * 0.22f * trem;
-            R += sr * e * vv->vel * 0.22f * trem;
+            L += sl * e * vv->vel * 0.105f * trem;
+            R += sr * e * vv->vel * 0.105f * trem;
         }
+        static float g_now = -1.0f;
         fx_run(&L, &R);
-        L = fm_tanhf(L * 0.9f) * 0.98f;
-        R = fm_tanhf(R * 0.9f) * 0.98f;
-        lr[2 * i] = (int32_t)(L * gain);
-        lr[2 * i + 1] = (int32_t)(R * gain);
+        L = fm_tanhf(L * 0.75f) * 0.97f;
+        R = fm_tanhf(R * 0.75f) * 0.97f;
+        if (g_now < 0.0f) g_now = gain;
+        g_now += (gain - g_now) * 0.0035f;
+        lr[2 * i] = (int32_t)(L * g_now);
+        lr[2 * i + 1] = (int32_t)(R * g_now);
     }
 }
 
