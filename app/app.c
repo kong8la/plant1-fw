@@ -17,7 +17,7 @@
 enum { G_OFF, G_ANALOG, G_WT, G_FM, G_NOISE };
 enum { W_SAW, W_SQUARE, W_PULSE, W_SINE };
 enum { F_OFF, F_LP, F_HP, F_BP, F_NOTCH };
-enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_PRESET, NPAGES };
+enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_PRESET, NPAGES };
 enum { LFO_SIN, LFO_TRI, LFO_SAW, LFO_SQR };
 enum { LT_CUT, LT_TREM };
 
@@ -53,6 +53,9 @@ typedef struct {
     uint8_t lfo2_shape;
     float lfo2_rate, lfo2_amt;
     route_t route[NROUTE];
+    uint8_t arp_on, arp_pattern, arp_rate, arp_oct;
+    float arp_gate;
+    uint16_t bpm;
 } patch_t;
 
 static patch_t P;
@@ -169,6 +172,8 @@ static void preset_load(uint8_t i)
     P.lfo2_shape = P.lfo_shape;
     P.lfo2_rate = 0.22f;
     P.lfo2_amt = 0.35f;
+    P.arp_on = 0; P.arp_pattern = 0; P.arp_rate = 1; P.arp_oct = 1;
+    P.arp_gate = 0.60f; P.bpm = 120;
     preset_index = i;
 }
 
@@ -663,7 +668,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 4;
+    bank.ver = 5;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -675,7 +680,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 4 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 5 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -696,11 +701,13 @@ static void slot_pick(int d)
 /* ------------------------------------------------------------------- UI --- */
 static const char *const GEN_NAME[5] = {"OFF", "ANALOG", "WAVETABLE", "FM", "NOISE"};
 static const char *const FTYPE_NAME[5] = {"OFF", "LP", "HP", "BP", "NOTCH"};
-static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "PATCH"};
+static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "PATCH"};
 static const char *const FX_NAME[6] = {"OFF", "DRIVE", "CHORUS", "DELAY", "REVERB", "COMP"};
 static const char *const LFO_NAME[4] = {"SIN", "TRI", "SAW", "SQR"};
 static const char *const SRC_NAME[6] = {"--", "ENV1", "ENV2", "LFO1", "LFO2", "VELO"};
 static const char *const DST_NAME[3] = {"LVL", "CUT", "PIT"};
+static const char *const PAT_NAME[4] = {"UP", "DOWN", "UPDN", "RAND"};
+static const char *const RATE_NAME[5] = {"1/4", "1/8", "1/8T", "1/16", "1/16T"};
 
 static void note_text(char *out, int32_t m)
 {
@@ -918,6 +925,24 @@ static void draw(void)
         cv_text(8, 74, &FONT_T, "GLO=toggle route", C_DIM);
         break;
     }
+    case PAGE_ARP:
+        cv_text(8, 2, &FONT_S, P.arp_on ? "ARP ON" : "ARP OFF", P.arp_on ? C_HI : C_DIM);
+        cv_text(8, 24, &FONT_T, "PATTERN", C_GRAY);
+        cv_text(80, 22, &FONT_S, PAT_NAME[P.arp_pattern & 3], C_HI);
+        cv_text(130, 24, &FONT_T, "RATE", C_GRAY);
+        cv_text(172, 22, &FONT_S, RATE_NAME[P.arp_rate % 5], C_HI);
+        cv_text(8, 42, &FONT_T, "OCT", C_GRAY);
+        num_text(v, P.arp_oct ? P.arp_oct : 1);
+        cv_text(40, 40, &FONT_S, v, C_HI);
+        cv_text(80, 42, &FONT_T, "GATE", C_GRAY);
+        num_text(v, (int32_t)(P.arp_gate * 100.0f));
+        cv_text(130, 40, &FONT_S, v, C_HI);
+        cv_text(8, 58, &FONT_T, "TEMPO", C_GRAY);
+        num_text(v, P.bpm);
+        cv_text(80, 56, &FONT_S, v, C_HI);
+        cv_text(8, 74, &FONT_T, "K1 PAT K2 RATE K3 OCT K4 GATE", C_DIM);
+        cv_text(8, 86, &FONT_T, "ARP=toggle  SEQ=tap tempo", C_DIM);
+        break;
     case PAGE_FX:
         for (i = 0; i < FX_MAX; i++) {
             fx_t *F = &P.fx[i];
@@ -959,12 +984,12 @@ static void draw(void)
     /* page tabs */
     cv_begin(240, 18, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
-        int32_t x = 2 + i * 40;
+        int32_t x = i * 34;
         if (i == page) {
-            cv_rect(x - 1, 2, 38, 14, C_LINE);
-            cv_text(x, 4, &FONT_T, PAGE_NAME[i], C_HI);
+            cv_rect(x + 1, 2, 33, 14, C_LINE);
+            cv_text(x + 3, 4, &FONT_T, PAGE_NAME[i], C_HI);
         } else {
-            cv_text(x, 4, &FONT_T, PAGE_NAME[i], C_DIM);
+            cv_text(x + 3, 4, &FONT_T, PAGE_NAME[i], C_DIM);
         }
     }
     cv_blit(0, 222);
@@ -996,6 +1021,80 @@ static void key_edges(uint32_t keys)
     prev = keys;
 }
 
+/* ----------------------------------------------------------------- arp --- */
+static uint8_t arp_voice, arp_step, arp_held;
+
+static uint32_t arp_ms(void)
+{
+    static const uint16_t base[5] = {500, 250, 166, 125, 83};
+    uint32_t bpm = P.bpm ? P.bpm : 120u;
+    uint32_t ms = (uint32_t)base[P.arp_rate % 5] * 120u / bpm;
+    return ms ? ms : 1u;
+}
+
+static void arp_rel(uint8_t v)
+{
+    if (V[v].active && V[v].stage != 0 && V[v].stage != 4) V[v].stage = 4;
+}
+
+static void arp_reset(void)
+{
+    int v;
+    for (v = 0; v < NV; v++)
+        arp_rel((uint8_t)v);
+    arp_held = 0;
+}
+
+static int32_t arp_note(const int32_t *held, int nh, uint32_t step)
+{
+    int oct = P.arp_oct ? P.arp_oct : 1;
+    int total = nh * oct;
+    int idx;
+    switch (P.arp_pattern & 3) {
+    case 1: idx = total - 1 - (int)(step % (uint32_t)total); break;
+    case 2: {
+        int per = total > 1 ? (total - 1) * 2 : 1;
+        int k = (int)(step % (uint32_t)per);
+        idx = k < total ? k : per - k;
+        break;
+    }
+    case 3: idx = (int)((frand() * 0.5f + 0.5f) * (float)total); if (idx >= total) idx = total - 1; if (idx < 0) idx = 0; break;
+    default: idx = (int)(step % (uint32_t)total); break;
+    }
+    return held[idx % nh] + 12 * (idx / nh);
+}
+
+void app_arp_frame(uint32_t keys, uint32_t now)
+{
+    int32_t held[NKEYS];
+    int nh = 0, i;
+    static uint32_t off_at, next_at;
+
+    for (i = 0; i < NKEYS; i++)
+        if (keys & (1u << i)) held[nh++] = 53 + i;
+    if (nh != arp_held) {
+        arp_held = (uint8_t)nh;
+        arp_step = 0;
+        next_at = now;
+        off_at = 0;
+        if (!nh) arp_rel(arp_voice);
+    }
+    if (off_at && now >= off_at) {
+        arp_rel(arp_voice);
+        off_at = 0;
+    }
+    if (!nh) return;
+    if (now >= next_at) {
+        int32_t n = arp_note(held, nh, arp_step);
+        arp_rel(arp_voice);
+        arp_voice = (uint8_t)((arp_voice + 1) % NV);
+        voice_start(&V[arp_voice], (uint8_t)n, 0.9f);
+        off_at = now + (uint32_t)((float)arp_ms() * fm_clampf(P.arp_gate, 0.05f, 0.95f));
+        next_at = now + arp_ms();
+        arp_step++;
+    }
+}
+
 /* ---------------------------------------------------------------- lights --- */
 #define ANIM_NONE 0
 #define ANIM_SWEEP 1
@@ -1004,7 +1103,7 @@ static void key_edges(uint32_t keys)
 static float key_glow[NKEYS];
 static uint32_t anim_t0, anim_kind;
 
-static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_SAVE};
+static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_ARP, B_SAVE};
 
 static void anim_start(uint8_t kind, uint32_t now)
 {
@@ -1061,7 +1160,8 @@ void app_frame(void)
 
     uint32_t now = plat_ms();
     btn_prev = btns;
-    key_edges(keys);
+    if (P.arp_on) app_arp_frame(keys, now);
+    else key_edges(keys);
     plat_lights(0, keys, 0, 0, 1);
 
     if (pressed & (1u << B_SEL)) selected = (uint8_t)((selected + 1) % NGEN);
@@ -1070,6 +1170,21 @@ void app_frame(void)
     if (pressed & (1u << B_OCTUP)) { if (octave < 2) octave++; }
     if (pressed & (1u << B_OCTDN)) { if (octave > -2) octave--; }
     if (pressed & (1u << B_SAVE)) { patch_save(); anim_start(ANIM_SWEEP, now); }
+    if (pressed & (1u << B_ARP)) {
+        P.arp_on = (uint8_t)!P.arp_on;
+        if (!P.arp_on) arp_reset();
+        anim_start(ANIM_BLINK, now);
+    }
+    if (pressed & (1u << B_SEQ)) {
+        static uint32_t last_tap;
+        if (last_tap && now - last_tap < 2000u) {
+            uint32_t ms = now - last_tap;
+            int32_t bpm = (int32_t)(60000u / (ms ? ms : 1u));
+            P.bpm = (uint16_t)clamp(bpm, 60, 200);
+            anim_start(ANIM_BLINK, now);
+        }
+        last_tap = now;
+    }
     if ((pressed & (1u << B_ENV)) && page == PAGE_ENV) env_sel = (uint8_t)!env_sel;
     if ((pressed & (1u << B_LFO)) && page == PAGE_LFO) lfo_sel = (uint8_t)!lfo_sel;
     if ((pressed & (1u << B_FX)) && page == PAGE_FX) {
@@ -1107,6 +1222,9 @@ void app_frame(void)
         case PAGE_FX:
             fx_sel = (uint8_t)((fx_sel + (d > 0 ? 1 : FX_MAX - 1)) % FX_MAX);
             break;
+        case PAGE_ARP:
+            P.arp_pattern = (uint8_t)((P.arp_pattern + (d > 0 ? 1 : 3)) & 3);
+            break;
         default:
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 7)) & 7));
             anim_start(ANIM_SWEEP, now);
@@ -1139,6 +1257,9 @@ void app_frame(void)
             F->p1 = fm_clampf(F->p1 + (float)d * 0.02f, 0.0f, 1.0f);
             break;
         }
+        case PAGE_ARP:
+            P.arp_rate = (uint8_t)((P.arp_rate + (d > 0 ? 1 : 4)) % 5);
+            break;
         default:
             slot_pick(d > 0 ? 1 : -1);
             break;
@@ -1166,6 +1287,9 @@ void app_frame(void)
         case PAGE_FX:
             P.fx[fx_sel].p2 = fm_clampf(P.fx[fx_sel].p2 + (float)d * 0.02f, 0.0f, 1.0f);
             break;
+        case PAGE_ARP:
+            P.arp_oct = (uint8_t)clamp((int32_t)P.arp_oct + (d > 0 ? 1 : -1), 1, 3);
+            break;
         }
     }
     d = plat_enc(EN_K4);
@@ -1189,6 +1313,9 @@ void app_frame(void)
         }
         case PAGE_FX:
             P.fx[fx_sel].p3 = fm_clampf(P.fx[fx_sel].p3 + (float)d * 0.02f, 0.0f, 1.0f);
+            break;
+        case PAGE_ARP:
+            P.arp_gate = fm_clampf(P.arp_gate + (float)d * 0.02f, 0.05f, 0.95f);
             break;
         }
     }
@@ -1253,6 +1380,11 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "routedst")) { *got = P.route[route_sel].dst; return 1; }
     if (!strcmp(what, "envsel")) { *got = env_sel; return 1; }
     if (!strcmp(what, "lfosel")) { *got = lfo_sel; return 1; }
+    if (!strcmp(what, "arp")) { *got = P.arp_on; return 1; }
+    if (!strcmp(what, "arppat")) { *got = P.arp_pattern; return 1; }
+    if (!strcmp(what, "arprate")) { *got = P.arp_rate; return 1; }
+    if (!strcmp(what, "bpm")) { *got = P.bpm; return 1; }
+    if (!strcmp(what, "arpstep")) { *got = arp_step; return 1; }
     return 0;
 }
 #endif

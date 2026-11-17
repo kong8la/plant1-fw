@@ -1,15 +1,15 @@
-# PLANT-1 M4 build settings (tools/build.py)
-name = "PLANT1M4"
-id_prefix = "FM-1_94"          # dev identity FM-1_9400
+# PLANT-1 M5 build settings (tools/build.py)
+name = "PLANT1M5"
+id_prefix = "FM-1_95"          # dev identity FM-1_9500
 usb_manufacturer = "PLANT-1"
-usb_product = "PLANT1 M4 FM-1"
+usb_product = "PLANT1 M5 FM-1"
 o2 = []
 words = "words.tsv"
 ble = false
 licence = "MIT"
-tagline = "PLANT-1 M4: a modulation matrix on the FM-1"
+tagline = "PLANT-1 M5: an arpeggiator on the FM-1"
 repo = "https://github.com/kong8la/plant1-fw"
 author = "kong8la"
-description = "PLANT-1 M4: four generator slots, filters, unison, six voices, eight presets, two envelopes, two LFOs, a modulation matrix (four routes from ENV1/ENV2/LFO1/LFO2/velocity to any slot's level, cutoff or pitch), five effects and four flash patch slots."
+description = "PLANT-1 M5: four generator slots, filters, unison, six voices, eight presets, two envelopes, two LFOs, a modulation matrix, five effects, four flash patch slots, and an arpeggiator with patterns, rates, octaves, gate and tap tempo."
 tags = ["synth"]
 credits = "built on fm1-base"
