@@ -597,7 +597,7 @@ static float fx_comp(float x, fx_t *F)
     if (comp_env > thr) {
         float over = thr / (comp_env + 1e-6f);
         comp_g += (over - comp_g) * 0.05f;
-        x = x * (1.0f - (1.0f - comp_g) * (1.0f - 1.0f / ratio)) * (1.0f + F->p3);
+        x = x * (1.0f - (1.0f - comp_g) * (1.0f - 1.0f / ratio)) * (1.0f + F->p3 * 0.5f);
     } else {
         comp_g += (1.0f - comp_g) * 0.01f;
     }
@@ -652,6 +652,7 @@ typedef struct {
     float env, env2, lfo_ph, lfo2_ph, lfo_val, lfo2_val, mod[NGEN * 3];
     float inc[NGEN][UNI_MAX];
     float panL[NGEN][UNI_MAX], panR[NGEN][UNI_MAX];
+    float norm;
     svf_t filt[NGEN];
 } voice_t;
 
@@ -871,6 +872,10 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
                 vv->mod[P.route[r].dst] += src[P.route[r].src & 7] * P.route[r].amt;
         {
             float base = 8.1757989f * fm_exp2f(vv->freq * (1.0f / 12.0f));
+            float lsum = 0.0f;
+            for (g = 0; g < NGEN; g++)
+                if (P.gen[g].on && P.gen[g].type != G_OFF) lsum += P.gen[g].level;
+            vv->norm = 0.9f / (lsum > 0.9f ? lsum : 0.9f);
             for (g = 0; g < NGEN; g++) {
                 gen_t *G = &P.gen[g];
                 float f;
@@ -911,11 +916,22 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
             if (vv->stage == 0) { vv->active = 0; continue; }
             if (P.lfo_tgt == LT_TREM) trem = 1.0f + vv->lfo_val * 0.5f;
             voice_sample(vv, &sl, &sr);
-            L += sl * e * vv->vel * 0.105f * trem;
-            R += sr * e * vv->vel * 0.105f * trem;
+            L += sl * e * vv->vel * 0.105f * vv->norm * trem;
+            R += sr * e * vv->vel * 0.105f * vv->norm * trem;
         }
         static float g_now = -1.0f;
+        static float lim = 1.0f;
+        float pk;
         fx_run(&L, &R);
+        pk = fm_maxf(fm_fabsf(L), fm_fabsf(R));
+        if (pk > 0.92f) {
+            float t = 0.92f / pk;
+            if (t < lim) lim = t;
+        } else {
+            lim += (1.0f - lim) * 0.0008f;
+        }
+        L *= lim;
+        R *= lim;
         L = fm_tanhf(L * 0.75f) * 0.97f;
         R = fm_tanhf(R * 0.75f) * 0.97f;
         if (g_now < 0.0f) g_now = gain;
