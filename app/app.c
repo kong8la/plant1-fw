@@ -1264,12 +1264,16 @@ static uint32_t mseed;
 static uint32_t mrnd(void);
 
 /* a tree grows out of the ground, then the name, then a splash line: the shrub boot, in our palette */
+static float boot_sway;
+
 static void boot_branch(int32_t x, int32_t y, float ang, float len, int depth, float grow)
 {
     float reach = 1.7f - (float)depth * 0.22f;
     float k = grow * reach;
     int32_t x1, y1;
     uint16_t c = depth == 0 ? C_HI : (depth == 1 ? C_WHITE : C_GRAY);
+
+    ang += boot_sway * (0.4f + 0.35f * (float)depth);
     if (k > 1.0f) k = 1.0f;
     if (k <= 0.0f) return;
     x1 = x + (int32_t)(fm_cosf(ang) * len * k);
@@ -1303,10 +1307,21 @@ static void boot_roots(float g)
     }
 }
 
+static void boot_sparkle(uint32_t dt)
+{
+    int i;
+    for (i = 0; i < 12; i++) {
+        int32_t x = 24 + (i * 53 + (int32_t)dt / 40) % 192;
+        int32_t y = 20 + (i * 37 + (int32_t)dt / 55) % 110;
+        if ((((uint32_t)i * 31u + dt / 120u) % 5u) == 0u)
+            cv_rect(x, y, 1, 1, (i & 1) ? C_WHITE : C_HI);
+    }
+}
+
 static void boot_pollen(uint32_t dt)
 {
     int i;
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < 14; i++) {
         int32_t y = 190 - (int32_t)((dt / 10u + (uint32_t)(i * 37)) % 150u);
         int32_t x = 30 + (i * 23 + (int32_t)(fm_sinf((float)dt * 0.003f + (float)i) * 12.0f)) % 180;
         if (x < 4) x = 4;
@@ -1328,20 +1343,30 @@ static void boot_ring(uint32_t dt)
 
 static void draw_boot(uint32_t dt)
 {
-    float g = (float)dt / 900.0f;
-    float w = dt > 700 ? (float)(dt - 700) / 500.0f : 0.0f;
+    float g = (float)dt / 500.0f;             /* the tree is already grown: it only settles */
+    float w = dt > 450 ? (float)(dt - 450) / 450.0f : 0.0f;
     int i;
 
     if (g > 1.0f) g = 1.0f;
     if (w > 1.0f) w = 1.0f;
     mseed = 0x51EDu;
 
-    /* the tree, in the upper band (the canvas is shorter than the screen) */
     cv_begin(240, 140, C_BLACK);
-    cv_rect(58, 136, 124, 1, RGB(30, 42, 54));
-    boot_roots(g);
-    boot_branch(120, 134, -1.5708f, 40.0f, 0, g);
-    boot_pollen(dt);
+    {
+        int32_t k;
+        boot_sway = fm_sinf((float)dt * 0.0024f) * 0.045f;
+        cv_rect(58, 136, 124, 1, RGB(30, 42, 54));
+        for (k = 0; k < 26; k++) {                   /* a cone of light behind the trunk */
+            int32_t y = 36 + k * 4;
+            int32_t half = 5 + (134 - y) / 3;
+            int32_t g = 6 + (k % 4) * 3 + (int32_t)(fm_sinf((float)dt * 0.004f + (float)k * 0.6f) * 2.0f);
+            cv_rect(120 - half, y, half * 2, 3, RGB(g / 2, g, g + 10));
+        }
+        boot_roots(1.0f);
+        boot_branch(120, 134, -1.5708f, 40.0f, 0, 1.0f);
+        boot_pollen(dt);
+        boot_sparkle(dt);
+    }
     cv_blit(0, 0);
 
     /* the name, the splash line and the dots below it */
@@ -1724,50 +1749,50 @@ static void draw(void)
     }
     cv_blit(0, 216);
 
-    /* the encoder readout: the header's second line, never the scope */
+    /* the encoder readout replaces the knob strip for a moment: the preset name stays put */
     if (osd_kind && plat_ms() < osd_until) {
-        cv_begin(240, 12, C_BLACK);
+        cv_begin(240, 26, C_BLACK);
         if (osd_kind == 1) {
             num_text(v, preset_index + 1);
-            cv_text(8, 0, &FONT_T, "PRESET", C_HI);
-            cv_text(58, 0, &FONT_T, v, C_WHITE);
-            cv_text(84, 0, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
+            cv_text(8, 7, &FONT_T, "PRESET", C_HI);
+            cv_text(58, 7, &FONT_T, v, C_WHITE);
+            cv_text(84, 7, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
         } else if (osd_kind == 2) {
             num_text(v, selected + 1);
-            cv_text(8, 0, &FONT_T, "SLOT", C_HI);
-            cv_text(40, 0, &FONT_T, "G", C_GRAY);
-            cv_text(48, 0, &FONT_T, v, C_WHITE);
+            cv_text(8, 7, &FONT_T, "SLOT", C_HI);
+            cv_text(40, 7, &FONT_T, "G", C_GRAY);
+            cv_text(48, 7, &FONT_T, v, C_WHITE);
         } else if (osd_kind == 3) {
-            cv_text(8, 0, &FONT_T, "PAGE", C_HI);
-            cv_text(40, 0, &FONT_T, PAGE_NAME[page], C_WHITE);
+            cv_text(8, 7, &FONT_T, "PAGE", C_HI);
+            cv_text(40, 7, &FONT_T, PAGE_NAME[page], C_WHITE);
         } else if (osd_kind == 4) {
-            cv_text(8, 0, &FONT_T, "PANIC", C_HI);
-            cv_text(52, 0, &FONT_T, "all notes off", C_GRAY);
+            cv_text(8, 7, &FONT_T, "PANIC", C_HI);
+            cv_text(52, 7, &FONT_T, "all notes off", C_GRAY);
         } else if (osd_kind == 10) {
-            cv_text(8, 0, &FONT_T, "MOTIF", C_HI);
-            cv_text(52, 0, &FONT_T, P.motif_mode == 0 ? "STYLE" : "EUCLID", C_WHITE);
+            cv_text(8, 7, &FONT_T, "MOTIF", C_HI);
+            cv_text(52, 7, &FONT_T, P.motif_mode == 0 ? "STYLE" : "EUCLID", C_WHITE);
         } else if (osd_kind == 11) {
-            cv_text(8, 0, &FONT_T, "CHORD", C_HI);
-            cv_text(52, 0, &FONT_T, P.chord ? "ON" : "OFF", C_WHITE);
+            cv_text(8, 7, &FONT_T, "CHORD", C_HI);
+            cv_text(52, 7, &FONT_T, P.chord ? "ON" : "OFF", C_WHITE);
         } else if (osd_kind == 12) {
-            cv_text(8, 0, &FONT_T, "MUTATE", C_HI);
-            cv_text(58, 0, &FONT_T, "a variation of the pattern", C_GRAY);
+            cv_text(8, 7, &FONT_T, "MUTATE", C_HI);
+            cv_text(58, 7, &FONT_T, "a variation of the pattern", C_GRAY);
         } else if (osd_kind == 14) {
-            cv_text(8, 0, &FONT_T, "SEQ", C_HI);
-            cv_text(36, 0, &FONT_T, seq_mode == 0 ? "STEP" : seq_mode == 1 ? "SHAPE" : "GROOVE", C_WHITE);
+            cv_text(8, 7, &FONT_T, "SEQ", C_HI);
+            cv_text(36, 7, &FONT_T, seq_mode == 0 ? "STEP" : seq_mode == 1 ? "SHAPE" : "GROOVE", C_WHITE);
         } else if (osd_kind >= 6) {
             int k = osd_kind - 6;
-            cv_text(8, 0, &FONT_T, "K", C_HI);
+            cv_text(8, 7, &FONT_T, "K", C_HI);
             num_text(v, k + 1);
-            cv_text(20, 0, &FONT_T, v, C_HI);
-            cv_text(34, 0, &FONT_T, K_LABEL[page][k], C_WHITE);
+            cv_text(20, 7, &FONT_T, v, C_HI);
+            cv_text(34, 7, &FONT_T, K_LABEL[page][k], C_WHITE);
         } else {
-            cv_text(8, 0, &FONT_T, "SAVE", C_HI);
-            cv_text(40, 0, &FONT_T, "stored to slot", C_GRAY);
+            cv_text(8, 7, &FONT_T, "SAVE", C_HI);
+            cv_text(40, 7, &FONT_T, "stored to slot", C_GRAY);
             num_text(v, slot_index + 1);
-            cv_text(140, 0, &FONT_T, v, C_WHITE);
+            cv_text(140, 7, &FONT_T, v, C_WHITE);
         }
-        cv_blit(0, 15);
+        cv_blit(0, 190);
     }
 }
 
@@ -2570,14 +2595,11 @@ void app_frame(void)
 void app_splash(void)
 {
     lcd_fill(0, 0, 240, 240, C_BLACK);
+    mseed = 0x51EDu;
     cv_begin(240, 140, C_BLACK);
-    cv_rect(58, 136, 124, 1, RGB(26, 36, 48));
-    cv_rect(118, 132, 5, 4, C_HI);
-    cv_rect(116, 130, 9, 1, C_DIM);
+    cv_rect(58, 136, 124, 1, RGB(30, 42, 54));
+    boot_branch(120, 134, -1.5708f, 40.0f, 0, 1.0f);
     cv_blit(0, 0);
-    cv_begin(240, 100, C_BLACK);
-    cv_text(78, 30, &FONT_T, "PLANT-1", C_DIM);
-    cv_blit(0, 140);
     lcd_sync();
 }
 
