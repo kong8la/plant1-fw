@@ -73,6 +73,7 @@ static uint32_t osd_until;
 static int8_t scope_buf[SCOPE_N];
 static uint8_t scope_w, scope_dec;
 static float out_meter;
+static float fx_in_peak;
 static uint32_t wipe_t0;
 static uint8_t wipe_on;
 
@@ -517,6 +518,41 @@ static int16_t rv_b[2][4][RV_N];
 static int16_t rv_ap_b[2][2][RV_AP_N];
 static uint32_t dly_i, cho_i, rv_i[2][4], rv_api[2][2];
 static float cho_ph, dly_lp[2], drv_lp[2], rv_lp[2], comp_env, comp_g;
+static uint8_t dly_on, cho_on;
+static uint32_t dly_d, cho_d[2];
+static float cho_inc = 0.0001f;
+
+/* once a block: the delay time and the chorus taps, as whole samples */
+static void fx_block_prepare(void)
+{
+    int i, ch;
+    dly_on = cho_on = 0;
+    for (i = 0; i < FX_MAX; i++) {
+        fx_t *F = &P.fx[i];
+        if (!F->on) continue;
+        if (F->type == FX_DELAY) {
+            dly_on = 1;
+            dly_d = (uint32_t)((10.0f + F->p1 * 120.0f) * 0.001f * SR);
+            if (dly_d >= DLY_N - 2) dly_d = DLY_N - 2;
+        } else if (F->type == FX_CHORUS) {
+            float depth = 0.012f + 0.010f * F->p2;
+            cho_inc = (0.05f + F->p1 * 4.95f) / SR;
+            cho_on = 1;
+            for (ch = 0; ch < 2; ch++) {
+                float d = depth * (0.5f + 0.5f * fm_sinf(cho_ph * FM_TWO_PI + (float)ch * 0.5f));
+                cho_d[ch] = (uint32_t)((0.008f + d) * SR);
+                if (cho_d[ch] >= CHO_N - 2) cho_d[ch] = CHO_N - 2;
+            }
+        }
+    }
+}
+
+static inline int16_t ring_get(const int16_t *b, uint32_t n, uint32_t i, uint32_t d)
+{
+    uint32_t j = i >= d ? i - d : i + n - d;
+    while (j >= n) j -= n;
+    return b[j];
+}
 
 static float fx_read(const int16_t *b, uint32_t n, uint32_t i, float delay)
 {
@@ -541,7 +577,8 @@ static void fx_write(int16_t *b, uint32_t n, uint32_t i, float x)
 static float fx_drive(float x, fx_t *F)
 {
     float g = 1.0f + F->p1 * 14.0f;
-    float y = fm_tanhf(x * g);
+    float t = x * g;
+    float y = t / (1.0f + fm_fabsf(t));
     float tone = 0.02f + (1.0f - F->p2) * 0.5f;
     drv_lp[0] += (y - drv_lp[0]) * tone;
     return x + (drv_lp[0] - x) * F->p3 * 0.9f;
@@ -549,17 +586,14 @@ static float fx_drive(float x, fx_t *F)
 
 static float fx_chorus(float x, int ch, fx_t *F)
 {
-    float rate = 0.05f + F->p1 * 4.95f;
-    float d = 0.012f + 0.010f * F->p2 * (0.5f + 0.5f * fm_sinf(cho_ph * FM_TWO_PI + (float)ch * 0.5f));
-    float y = fx_read(cho_b[ch], CHO_N, cho_i + (uint32_t)ch * 37u, d * SR);
-    fx_write(cho_b[ch], CHO_N, cho_i + (uint32_t)ch * 37u, x);
+    float y = (float)ring_get(cho_b[ch], CHO_N, cho_i, cho_d[ch]) * (1.0f / 32768.0f);
+    fx_write(cho_b[ch], CHO_N, cho_i, x);
     return x + y * F->p3;
 }
 
 static float fx_delay(float x, int ch, fx_t *F)
 {
-    float time = (10.0f + F->p1 * 120.0f) * 0.001f * SR;
-    float y = fx_read(dly_b[ch], DLY_N, dly_i, time);
+    float y = (float)ring_get(dly_b[ch], DLY_N, dly_i, dly_d) * (1.0f / 32768.0f);
     fx_write(dly_b[ch], DLY_N, dly_i, x + y * F->p2 * 0.75f);
     return x + y * F->p3;
 }
@@ -644,7 +678,8 @@ static void fx_run(float *L, float *R)
     }
     dly_i++;
     cho_i++;
-    cho_ph += 0.0001f;
+    cho_ph += cho_inc;
+    if (cho_ph >= 1.0f) cho_ph -= 1.0f;
 }
 
 /* ---------------------------------------------------------------- voices --- */
@@ -853,6 +888,7 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
     float ldt = (float)n / SR;
 
     if (!ready) tables_build();
+    fx_block_prepare();
     env_k_a = ENV_K(P.a_ms); env_k_d = ENV_K(P.d_ms); env_k_r = ENV_K(P.r_ms);
     env2_k_a = ENV_K(P.e2a); env2_k_d = ENV_K(P.e2d); env2_k_r = ENV_K(P.e2r);
 
@@ -929,6 +965,7 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         static float g_now = -1.0f;
         static float lim = 1.0f;
         float pk;
+        { float pk = fm_maxf(fm_fabsf(L), fm_fabsf(R)); if (pk > fx_in_peak) fx_in_peak = pk; }
         fx_run(&L, &R);
         pk = fm_maxf(fm_fabsf(L), fm_fabsf(R));
         if (pk > 0.92f) {
@@ -1870,6 +1907,7 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "seqstep")) { *got = seq_at; return 1; }
     if (!strcmp(what, "seqsel")) { *got = seq_sel; return 1; }
     if (!strcmp(what, "seqnote")) { *got = P.seq[seq_sel].note; return 1; }
+    if (!strcmp(what, "fxin")) { *got = (int)(fx_in_peak * 1000.0f); fx_in_peak = 0.0f; return 1; }
     return 0;
 }
 #endif
