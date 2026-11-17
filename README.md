@@ -4,6 +4,13 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M16: the generator grid
+
+![The GEN page as a 2 x 2 grid of cards](docs/m16.png)
+
+The four generator slots are module cards in a 2 x 2 grid, Phase Plant style: each shows its number,
+engine, filter, its waveform, on/off, a six-block level and its transpose. The selected card takes the
+accent. The page below holds the selected card's values (level, cutoff, tune, slot, octave).
 ## M15: the boot animation
 
 ![The boot screen](docs/m15.png)
