@@ -1,23 +1,29 @@
 wait 300
-# the three encoders that used to do nothing
+# the three encoders: PRESET = sound, SELECT = page, ALGO = slot (JIANT's roles)
 expect preset 0
 turn PRESET 1
 wait 30
 expect preset 1
 turn SELECT 1
 wait 30
-expect sel 1
-expect page 0
+expect page 1
 turn ALGO 1
 wait 30
-expect page 1
-# the page buttons jump to their page
+expect sel 1
+# section buttons: tap goes there, a second tap walks its groups
+tap FX
+wait 30
+expect page 4
 tap FX
 wait 30
 expect page 4
 tap ENV
 wait 30
 expect page 1
+tap ENV
+wait 30
+expect page 1
+expect envsel 1
 tap LFO
 wait 30
 expect page 2
@@ -27,11 +33,14 @@ expect page 3
 tap HOME
 wait 30
 expect page 0
-# and toggle when already there
-tap FX
+# hold PLAY = panic (everything off)
+tap SEQ
+tap SEQ
+wait 40
+expect seq 1
+press PLAY
+wait 800
+release PLAY
 wait 30
-expect page 4
-tap FX
-wait 30
-expect page 4
-shot fx.png
+expect seq 0
+shot panel.png

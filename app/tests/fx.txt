@@ -1,5 +1,5 @@
 wait 300
-# the FX page: five slots, FX toggles the selected one
+# the FX page: five slots; hold FX turns the selected one on
 tap EDIT
 tap EDIT
 tap EDIT
@@ -8,7 +8,9 @@ wait 30
 expect page 4
 expect fxtype 0
 expect fxsel 0
-tap FX
+press FX
+wait 800
+release FX
 wait 30
 expect fxon 1
 expect fxtype 1

@@ -1,0 +1,55 @@
+wait 300
+# ACID (10)
+turn PRESET 10
+wait 30
+key 7 down
+wait 250
+key 7 up
+wav p10.wav
+wait 900
+wavstop
+# REESE (11)
+turn PRESET 1
+wait 30
+key 7 down
+wait 250
+key 7 up
+wav p11.wav
+wait 900
+wavstop
+# SUPER SAW (16)
+turn PRESET 5
+wait 30
+key 7 down
+wait 250
+key 7 up
+wav p16.wav
+wait 900
+wavstop
+# HOOVER (17)
+turn PRESET 1
+wait 30
+key 7 down
+wait 250
+key 7 up
+wav p17.wav
+wait 900
+wavstop
+# PHASE PAD (24)
+turn PRESET 7
+wait 30
+key 7 down
+wait 250
+key 7 up
+wav p24.wav
+wait 900
+wavstop
+# STRINGS (27)
+turn PRESET 3
+wait 30
+key 7 down
+wait 250
+key 7 up
+wav p27.wav
+wait 900
+wavstop

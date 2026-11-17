@@ -1,15 +1,15 @@
-# PLANT-1 M10 build settings (tools/build.py)
-name = "PLANT1M10"
-id_prefix = "FM-1_10"          # dev identity FM-1_1000
+# PLANT-1 M11 build settings (tools/build.py)
+name = "PLANT1M11"
+id_prefix = "FM-1_11"          # dev identity FM-1_1100
 usb_manufacturer = "PLANT-1"
-usb_product = "PLANT1 M10 FM-1"
+usb_product = "PLANT1 M11 FM-1"
 o2 = []
 words = "words.tsv"
 ble = false
 licence = "MIT"
-tagline = "PLANT-1 M10: the DSP headroom release"
+tagline = "PLANT-1 M11: the DSP headroom release"
 repo = "https://github.com/kong8la/plant1-fw"
 author = "kong8la"
-description = "PLANT-1 M10: the sequencer, 32 presets, arp, modulation matrix, effects and four engines, with the sample path optimised (phase increments and pan gains computed once a block, envelope coefficients once a block, no exp2 in the inner loop) so the FM-1 renders without underruns."
+description = "PLANT-1 M11: the sequencer, 32 presets, arp, modulation matrix, effects and four engines, with the sample path optimised (phase increments and pan gains computed once a block, envelope coefficients once a block, no exp2 in the inner loop) so the FM-1 renders without underruns."
 tags = ["synth"]
 credits = "built on fm1-base"

@@ -1,0 +1,13 @@
+wait 300
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 3
+expect holds 0
+press GLO
+wait 800
+expect holds 1
+release GLO
+wait 30
+expect routeon 1

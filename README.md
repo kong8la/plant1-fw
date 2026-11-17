@@ -4,6 +4,31 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M11: the panel, after JIANT
+
+The control scheme follows the one JIANT FM documents (its manual, not its code): a section button
+takes you to that section, pressing it again walks the section's groups, and holding it runs that
+section's action.
+
+| Button | tap | tap again (inside) | hold |
+| --- | --- | --- | --- |
+| HOME | GEN | - | **panic: all notes off** |
+| ENV | ENV | AMP / MOD | - |
+| LFO | LFO | LFO1 / LFO2 | - |
+| FX | FX | next effect | **toggle that effect** |
+| GLO | MOD | next route | **toggle that route** |
+| ARP | ARP | start/stop | start/stop |
+| SEQ | SEQ | start/stop | start/stop |
+| SAVE | PATCH | next slot | **store the patch** |
+| SEL | next slot | - | - |
+| EDIT | next page | - | - |
+| PLAY | transport | - | **panic** |
+| REC | tap tempo (twice) | - | - |
+| OCT+/- | transpose | - | - |
+
+The three fixed encoders keep one job each: **SELECT** walks the pages, **ALGORITHM** picks the slot,
+**PRESETS** always picks the sound; K1-K4 are the page's four values. The screen prints which one
+just moved (PAGE / SLOT / PRESET / PANIC / SAVE).
 ## M10: the screen
 
 ![M10 on the screen](docs/m10.png)

@@ -1,0 +1,37 @@
+wait 300
+# VIBES (5): chorus + reverb
+turn PRESET 5
+wait 30
+key 7 down
+wait 300
+key 7 up
+wav v.wav
+wait 900
+wavstop
+# ACID (14): drive + delay
+turn PRESET 8
+wait 30
+key 7 down
+wait 300
+key 7 up
+wav a.wav
+wait 900
+wavstop
+# SUPER SAW (20): chorus + reverb + unison
+turn PRESET 6
+wait 30
+key 7 down
+wait 300
+key 7 up
+wav s.wav
+wait 900
+wavstop
+# INIT (0): no fx
+turn PRESET 12
+wait 30
+key 7 down
+wait 300
+key 7 up
+wav i.wav
+wait 900
+wavstop

@@ -29,4 +29,4 @@ expect arprate 2
 shot arp.png
 tap ARP
 wait 30
-expect arp 1
+expect arp 0
