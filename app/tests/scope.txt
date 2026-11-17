@@ -1,0 +1,16 @@
+wait 300
+turn PRESET 16
+wait 40
+key 7 down
+key 11 down
+wait 700
+shot scope1.png
+wait 200
+shot scope2.png
+key 7 up
+key 11 up
+wait 300
+tap SEQ
+wait 500
+shot scope3.png
+tap SEQ

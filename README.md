@@ -4,6 +4,14 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M10: the screen
+
+![M10 on the screen](docs/m10.png)
+
+- an **oscilloscope** of the output in the header, with a peak meter
+- the four slots as **cards** with segmented level meters and their waveform
+- a **lit pill** on the current page tab, and a bright bar that sweeps across the page when it changes
+- the header keeps the patch number and slot (P 12/32 G 2); PRESET / SELECT / ALGO print what they did
 ## M8: the panel, wired to the sound
 
 ![M8 on the screen](docs/m7.png)

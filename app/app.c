@@ -69,6 +69,13 @@ static uint8_t seq_voice, seq_sel, seq_at;
 static uint8_t osd_kind;
 static uint32_t osd_until;
 
+#define SCOPE_N 56
+static int8_t scope_buf[SCOPE_N];
+static uint8_t scope_w, scope_dec;
+static float out_meter;
+static uint32_t wipe_t0;
+static uint8_t wipe_on;
+
 /* the eight patches */
 #define G(on_, ty, wv, tb, ft, tn, lv, pn, cu, rs, pw, mo, ra, ix, fb, co) \
     {(uint8_t)(on_), (uint8_t)(ty), (uint8_t)(wv), (uint8_t)(tb), (uint8_t)(ft), (int8_t)(tn), \
@@ -932,6 +939,17 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         }
         L *= lim;
         R *= lim;
+        if (++scope_dec >= 6) {
+            int32_t smp = (int32_t)(L * 1200.0f);
+            scope_buf[scope_w] = (int8_t)(smp > 127 ? 127 : smp < -127 ? -127 : smp);
+            scope_w = (uint8_t)((scope_w + 1) % SCOPE_N);
+            scope_dec = 0;
+        }
+        {
+            float pk = fm_fabsf(L) * 4.0f;
+            if (pk > out_meter) out_meter = pk;
+            else out_meter *= 0.9993f;
+        }
         L = fm_tanhf(L * 0.75f) * 0.97f;
         R = fm_tanhf(R * 0.75f) * 0.97f;
         if (g_now < 0.0f) g_now = gain;
@@ -1108,41 +1126,58 @@ static void draw(void)
 {
     char t[16], v[12];
     int i;
-    int32_t n = -1, voices = 0;
+    int32_t n = -1;
+    uint32_t now = plat_ms();
 
-    for (i = 0; i < NV; i++) if (V[i].active) { if (n < 0) n = V[i].note; voices++; }
+    for (i = 0; i < NV; i++) if (V[i].active) { if (n < 0) n = V[i].note; break; }
 
-    /* header: name and patch, note and voices */
-    cv_begin(240, 30, C_BLACK);
+    /* header: name, patch, note, a scope of the output, and the peak meter */
+    cv_begin(240, 46, C_BLACK);
     cv_text(8, 1, &FONT_B, "PLANT-1", C_WHITE);
-    cv_text(8, 18, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
-    num_text(v, preset_index + 1);
-    cv_text(150, 18, &FONT_T, "P", C_DIM);
-    cv_text(157, 18, &FONT_T, v, C_GRAY);
-    cv_text(171, 18, &FONT_T, "/32", C_DIM);
-    num_text(v, selected + 1);
-    cv_text(199, 18, &FONT_T, "G", C_DIM);
-    cv_text(207, 18, &FONT_T, v, C_GRAY);
     note_text(t, n);
-    cv_text(198 - text_w(&FONT_B, t), 1, &FONT_B, t, n >= 0 ? C_HI : C_DIM);
+    cv_text(196 - text_w(&FONT_B, t), 1, &FONT_B, t, n >= 0 ? C_HI : C_DIM);
+    cv_text(8, 17, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
+    num_text(v, preset_index + 1);
+    cv_text(150, 17, &FONT_T, "P", C_DIM);
+    cv_text(157, 17, &FONT_T, v, C_GRAY);
+    cv_text(171, 17, &FONT_T, "/32", C_DIM);
+    num_text(v, selected + 1);
+    cv_text(199, 17, &FONT_T, "G", C_DIM);
+    cv_text(207, 17, &FONT_T, v, C_GRAY);
+    {
+        int32_t yc = 38;
+        cv_rect(8, 38, 168, 1, RGB(20, 28, 36));
+        for (i = 0; i < 56; i++) {
+            int8_t smp = scope_buf[(scope_w + i) % SCOPE_N];
+            int32_t y = yc - (int32_t)((int32_t)smp * 6 / 127);
+            if (y < 31) y = 31;
+            if (y > 45) y = 45;
+            cv_rect(8 + i * 3, y < yc ? y : yc, 2, (y < yc ? yc - y : y - yc) < 1 ? 1 : (y < yc ? yc - y : y - yc), smp >= 0 ? C_HI : C_GRAY);
+        }
+        cv_rect(186, 32, 44, 4, RGB(24, 33, 43));
+        cv_rect(186, 32, (int32_t)(fm_clampf(out_meter, 0.0f, 1.0f) * 44.0f), 4, out_meter > 0.85f ? C_WHITE : C_HI);
+    }
     cv_blit(0, 0);
 
-    /* the four slots: shape, type, filter, level */
-    cv_begin(240, 96, C_BLACK);
+    /* the four slots: a card each, with a segmented level */
+    cv_begin(240, 80, C_BLACK);
     for (i = 0; i < NGEN; i++) {
         gen_t *G = &P.gen[i];
-        int32_t y = i * 24;
-        if (i == selected) cv_rect(2, y + 1, 236, 22, C_LINE);
-        draw_slot_wave(8, y + 6, 42, 12, i, G->on ? C_HI : C_DIM);
-        cv_text(56, y + 3, &FONT_XS, GEN_NAME[G->type], G->on ? C_HI : C_DIM);
-        if (G->ftype) cv_text(116, y + 5, &FONT_T, FTYPE_NAME[G->ftype], C_GRAY);
-        cv_rect(152, y + 11, 66, 4, RGB(26, 36, 48));
-        cv_rect(152, y + 11, (int32_t)(G->level * 66.0f), 4, G->on ? C_HI : C_DIM);
+        int32_t y = i * 20;
+        int32_t k, lit;
+        if (i == selected) cv_rect(2, y + 1, 236, 19, C_LINE);
+        draw_slot_wave(8, y + 5, 36, 11, i, G->on ? C_HI : C_DIM);
+        cv_text(50, y + 3, &FONT_XS, GEN_NAME[G->type], G->on ? (G->ftype ? C_HI : C_GRAY) : C_DIM);
+        if (G->ftype) cv_text(108, y + 4, &FONT_T, FTYPE_NAME[G->ftype], C_DIM);
+        lit = G->on ? (int32_t)(G->level * 8.0f + 0.5f) : 0;
+        for (k = 0; k < 8; k++) {
+            cv_rect(150 + k * 10, y + 7, 7, 5, k < lit ? (G->on ? C_HI : C_DIM) : RGB(22, 31, 40));
+        }
     }
-    cv_blit(0, 30);
+    cv_blit(0, 46);
 
     /* the page */
-    cv_begin(240, 96, C_BLACK);
+    cv_begin(240, 94, C_BLACK);
     switch (page) {
     case PAGE_GEN:
         cv_text(8, 2, &FONT_T, "LEVEL", C_GRAY);
@@ -1151,179 +1186,170 @@ static void draw(void)
         cv_text(120, 2, &FONT_T, "CUT", C_GRAY);
         num_text(v, (int32_t)P.gen[selected].cut);
         cv_text(160, 0, &FONT_S, v, C_HI);
-        cv_text(8, 24, &FONT_T, "TUNE", C_GRAY);
+        cv_text(8, 26, &FONT_T, "TUNE", C_GRAY);
         num_text(v, (int32_t)P.gen[selected].tune);
-        cv_text(60, 22, &FONT_S, v, C_HI);
-        cv_text(120, 26, &FONT_T, "K1 TYPE K2 LVL", C_DIM);
-        cv_text(8, 46, &FONT_T, "K3 PAN  K4 TUNE", C_DIM);
+        cv_text(60, 24, &FONT_S, v, C_HI);
+        cv_text(120, 28, &FONT_T, "K1 TYPE K2 LVL", C_DIM);
+        cv_text(8, 50, &FONT_T, "K3 PAN  K4 TUNE", C_DIM);
         num_text(v, selected + 1);
-        cv_text(8, 64, &FONT_T, "SLOT", C_DIM);
-        cv_text(38, 64, &FONT_T, v, C_GRAY);
-        cv_text(52, 64, &FONT_T, "/4", C_DIM);
+        cv_text(8, 72, &FONT_T, "SLOT", C_DIM);
+        cv_text(38, 72, &FONT_T, v, C_GRAY);
+        cv_text(52, 72, &FONT_T, "/4", C_DIM);
         num_text(v, octave);
-        cv_text(96, 64, &FONT_T, "OCT", C_DIM);
-        cv_text(126, 64, &FONT_T, v, C_GRAY);
+        cv_text(96, 72, &FONT_T, "OCT", C_DIM);
+        cv_text(126, 72, &FONT_T, v, C_GRAY);
         break;
     case PAGE_ENV: {
         float ea = env_sel ? P.e2a : P.a_ms, ed = env_sel ? P.e2d : P.d_ms;
         float es = env_sel ? P.e2s : P.s, er = env_sel ? P.e2r : P.r_ms;
-        draw_env_graph(8, 2, 224, 42, ea, ed, es, er);
-        cv_text(8, 48, &FONT_T, env_sel ? "MOD ENV" : "AMP ENV", C_WHITE);
-        cv_text(8, 62, &FONT_T, "A", C_GRAY);
+        draw_env_graph(8, 2, 224, 44, ea, ed, es, er);
+        cv_text(8, 50, &FONT_T, env_sel ? "MOD ENV" : "AMP ENV", C_WHITE);
+        cv_text(8, 64, &FONT_T, "A", C_GRAY);
         num_text(v, (int32_t)ea);
-        cv_text(20, 62, &FONT_T, v, C_HI);
-        cv_text(62, 62, &FONT_T, "D", C_GRAY);
+        cv_text(20, 64, &FONT_T, v, C_HI);
+        cv_text(62, 64, &FONT_T, "D", C_GRAY);
         num_text(v, (int32_t)ed);
-        cv_text(74, 62, &FONT_T, v, C_HI);
-        cv_text(118, 62, &FONT_T, "S", C_GRAY);
+        cv_text(74, 64, &FONT_T, v, C_HI);
+        cv_text(118, 64, &FONT_T, "S", C_GRAY);
         num_text(v, (int32_t)(es * 100.0f));
-        cv_text(130, 62, &FONT_T, v, C_HI);
-        cv_text(176, 62, &FONT_T, "R", C_GRAY);
+        cv_text(130, 64, &FONT_T, v, C_HI);
+        cv_text(176, 64, &FONT_T, "R", C_GRAY);
         num_text(v, (int32_t)er);
-        cv_text(188, 62, &FONT_T, v, C_HI);
-        cv_text(8, 78, &FONT_T, "ENV=AMP/MOD  K1-K4 A D S R", C_DIM);
+        cv_text(188, 64, &FONT_T, v, C_HI);
+        cv_text(8, 82, &FONT_T, "ENV=AMP/MOD  K1-K4 A D S R", C_DIM);
         break;
     }
     case PAGE_LFO:
-        draw_lfo_graph(8, 2, 224, 34);
-        cv_text(8, 40, &FONT_S, LFO_NAME[(lfo_sel ? P.lfo2_shape : P.lfo_shape) & 3], C_HI);
-        cv_text(62, 42, &FONT_T, "RATE", C_GRAY);
+        draw_lfo_graph(8, 2, 224, 36);
+        cv_text(8, 44, &FONT_S, LFO_NAME[(lfo_sel ? P.lfo2_shape : P.lfo_shape) & 3], C_HI);
+        cv_text(62, 46, &FONT_T, "RATE", C_GRAY);
         hz_text(v, lfo_sel ? P.lfo2_rate : P.lfo_rate);
-        cv_text(100, 40, &FONT_S, v, C_HI);
-        cv_text(150, 42, &FONT_T, "AMT", C_GRAY);
+        cv_text(100, 44, &FONT_S, v, C_HI);
+        cv_text(150, 46, &FONT_T, "AMT", C_GRAY);
         num_text(v, (int32_t)((lfo_sel ? P.lfo2_amt : P.lfo_amt) * 100.0f));
-        cv_text(186, 40, &FONT_S, v, C_HI);
-        cv_text(8, 60, &FONT_T, lfo_sel ? "LFO2 -> MOD MATRIX" : "LFO1 -> CUTOFF/TREM", C_GRAY);
-        cv_text(8, 76, &FONT_T, "LFO=LFO1/2  K1 SHAPE K2 RATE K3 AMT", C_DIM);
+        cv_text(186, 44, &FONT_S, v, C_HI);
+        cv_text(8, 64, &FONT_T, lfo_sel ? "LFO2 -> MOD MATRIX" : "LFO1 -> CUTOFF/TREM", C_GRAY);
+        cv_text(8, 82, &FONT_T, "LFO=LFO1/2  K1 SHAPE K2 RATE K3 AMT", C_DIM);
         break;
     case PAGE_MOD: {
         int32_t y;
         int r;
         for (r = 0; r < NROUTE; r++) {
             route_t *R = &P.route[r];
-            y = r * 14;
-            if (r == route_sel) cv_rect(2, y, 236, 13, C_LINE);
+            y = r * 15;
+            if (r == route_sel) cv_rect(2, y, 236, 14, C_LINE);
             cv_text(6, y + 1, &FONT_T, SRC_NAME[R->src], R->on ? C_HI : C_DIM);
             cv_text(52, y + 1, &FONT_T, ">", C_DIM);
             num_text(v, R->dst / 3 + 1);
             cv_text(64, y + 1, &FONT_T, "G", C_GRAY);
             cv_text(74, y + 1, &FONT_T, v, R->on ? C_HI : C_DIM);
             cv_text(86, y + 1, &FONT_T, DST_NAME[R->dst % 3], R->on ? C_HI : C_DIM);
-            cv_rect(140, y + 5, 80, 3, RGB(26, 36, 48));
+            cv_rect(140, y + 5, 80, 3, RGB(22, 31, 40));
             if (R->on)
                 cv_rect(140, y + 5, (int32_t)(fm_clampf(fm_fabsf(R->amt), 0.0f, 1.0f) * 80.0f), 3, C_GRAY);
         }
-        cv_text(8, 60, &FONT_T, "K1 ROUTE K2 SRC K3 DST K4 DEPTH", C_DIM);
-        cv_text(8, 74, &FONT_T, "GLO=toggle route", C_DIM);
+        cv_text(8, 64, &FONT_T, "K1 ROUTE K2 SRC K3 DST K4 DEPTH", C_DIM);
+        cv_text(8, 80, &FONT_T, "GLO=toggle route", C_DIM);
         break;
     }
+    case PAGE_ARP:
+        cv_text(8, 2, &FONT_S, P.arp_on ? "ARP ON" : "ARP OFF", P.arp_on ? C_HI : C_DIM);
+        cv_text(8, 26, &FONT_T, "PATTERN", C_GRAY);
+        cv_text(80, 24, &FONT_S, PAT_NAME[P.arp_pattern & 3], C_HI);
+        cv_text(130, 26, &FONT_T, "RATE", C_GRAY);
+        cv_text(172, 24, &FONT_S, RATE_NAME[P.arp_rate % 5], C_HI);
+        cv_text(8, 46, &FONT_T, "OCT", C_GRAY);
+        num_text(v, P.arp_oct ? P.arp_oct : 1);
+        cv_text(40, 44, &FONT_S, v, C_HI);
+        cv_text(80, 46, &FONT_T, "GATE", C_GRAY);
+        num_text(v, (int32_t)(P.arp_gate * 100.0f));
+        cv_text(130, 44, &FONT_S, v, C_HI);
+        cv_text(8, 62, &FONT_T, "TEMPO", C_GRAY);
+        num_text(v, P.bpm);
+        cv_text(80, 60, &FONT_S, v, C_HI);
+        cv_text(8, 80, &FONT_T, "K1 PAT K2 RATE K3 OCT K4 GATE", C_DIM);
+        break;
     case PAGE_SEQ:
         for (i = 0; i < 16; i++) {
             seqstep_t *st = &P.seq[i];
             int32_t x = (i % 8) * 29 + 1;
-            int32_t y = (i / 8) * 34;
-            if (i == seq_sel) cv_rect(x, y, 27, 30, C_LINE);
-            if (P.seq_on && i == seq_at) cv_rect(x + 2, y + 28, 23, 1, C_WHITE);
+            int32_t y = (i / 8) * 36;
+            if (i == seq_sel) cv_rect(x, y, 27, 32, C_LINE);
+            if (P.seq_on && i == seq_at) cv_rect(x + 2, y + 30, 23, 2, C_WHITE);
             num_text(v, st->note);
             cv_text(x + 4, y + 2, &FONT_T, v, st->on ? C_HI : C_DIM);
-            cv_rect(x + 4, y + 20, 19, 3, RGB(26, 36, 48));
-            if (st->on) cv_rect(x + 4, y + 20, (int32_t)((float)st->vel / 127.0f * 19.0f), 3, C_GRAY);
+            cv_rect(x + 4, y + 22, 19, 3, RGB(22, 31, 40));
+            if (st->on) cv_rect(x + 4, y + 22, (int32_t)((float)st->vel / 127.0f * 19.0f), 3, C_GRAY);
         }
-        cv_text(8, 72, &FONT_T, "K1 STEP K2 NOTE K3 VEL K4 GATE", C_DIM);
-        cv_text(8, 86, &FONT_T, P.seq_on ? "RUNNING - SEQ stops it" : "SEQ runs it - PLAY taps tempo", C_DIM);
-        break;
-    case PAGE_ARP:
-        cv_text(8, 2, &FONT_S, P.arp_on ? "ARP ON" : "ARP OFF", P.arp_on ? C_HI : C_DIM);
-        cv_text(8, 24, &FONT_T, "PATTERN", C_GRAY);
-        cv_text(80, 22, &FONT_S, PAT_NAME[P.arp_pattern & 3], C_HI);
-        cv_text(130, 24, &FONT_T, "RATE", C_GRAY);
-        cv_text(172, 22, &FONT_S, RATE_NAME[P.arp_rate % 5], C_HI);
-        cv_text(8, 42, &FONT_T, "OCT", C_GRAY);
-        num_text(v, P.arp_oct ? P.arp_oct : 1);
-        cv_text(40, 40, &FONT_S, v, C_HI);
-        cv_text(80, 42, &FONT_T, "GATE", C_GRAY);
-        num_text(v, (int32_t)(P.arp_gate * 100.0f));
-        cv_text(130, 40, &FONT_S, v, C_HI);
-        cv_text(8, 58, &FONT_T, "TEMPO", C_GRAY);
-        num_text(v, P.bpm);
-        cv_text(80, 56, &FONT_S, v, C_HI);
-        cv_text(8, 74, &FONT_T, "K1 PAT K2 RATE K3 OCT K4 GATE", C_DIM);
-        cv_text(8, 86, &FONT_T, "ARP=toggle  SEQ=tap tempo", C_DIM);
+        cv_text(8, 70, &FONT_T, "K1 STEP K2 NOTE K3 VEL K4 GATE", C_DIM);
+        cv_text(8, 84, &FONT_T, P.seq_on ? "RUNNING - SEQ stops it" : "SEQ runs it - PLAY taps", C_DIM);
         break;
     case PAGE_FX:
         for (i = 0; i < FX_MAX; i++) {
             fx_t *F = &P.fx[i];
-            int32_t y = i * 14;
-            if (i == fx_sel) cv_rect(2, y, 236, 13, C_LINE);
+            int32_t y = i * 15;
+            if (i == fx_sel) cv_rect(2, y, 236, 14, C_LINE);
             cv_text(8, y + 1, &FONT_T, FX_NAME[F->type], F->on ? C_HI : C_DIM);
             cv_text(96, y + 1, &FONT_T, F->on ? "ON" : "--", F->on ? C_HI : C_DIM);
-            cv_rect(130, y + 5, 90, 3, C_LINE);
+            cv_rect(130, y + 5, 90, 3, RGB(22, 31, 40));
             if (F->on) cv_rect(130, y + 5, (int32_t)(fm_clampf(F->p3, 0.0f, 1.0f) * 90.0f), 3, C_GRAY);
         }
         {
             fx_t *F = &P.fx[fx_sel];
             num_text(v, (int32_t)(F->p1 * 100.0f));
-            cv_text(8, 76, &FONT_T, "A", C_GRAY); cv_text(20, 76, &FONT_T, v, C_HI);
+            cv_text(8, 78, &FONT_T, "A", C_GRAY); cv_text(20, 78, &FONT_T, v, C_HI);
             num_text(v, (int32_t)(F->p2 * 100.0f));
-            cv_text(70, 76, &FONT_T, "B", C_GRAY); cv_text(82, 76, &FONT_T, v, C_HI);
+            cv_text(70, 78, &FONT_T, "B", C_GRAY); cv_text(82, 78, &FONT_T, v, C_HI);
             num_text(v, (int32_t)(F->p3 * 100.0f));
-            cv_text(132, 76, &FONT_T, "C", C_GRAY); cv_text(144, 76, &FONT_T, v, C_HI);
-            cv_text(176, 76, &FONT_T, "FX=toggle", C_DIM);
+            cv_text(132, 78, &FONT_T, "C", C_GRAY); cv_text(144, 78, &FONT_T, v, C_HI);
+            cv_text(176, 78, &FONT_T, "FX=toggle", C_DIM);
         }
         break;
     default:
         cv_text(8, 2, &FONT_S, PRESET_NAME[preset_index], C_HI);
         num_text(v, preset_index + 1);
-        cv_text(8, 24, &FONT_T, "PATCH", C_GRAY);
-        cv_text(48, 22, &FONT_S, v, C_HI);
-        cv_text(66, 24, &FONT_T, "/32", C_DIM);
+        cv_text(8, 26, &FONT_T, "PATCH", C_GRAY);
+        cv_text(48, 24, &FONT_S, v, C_HI);
+        cv_text(66, 26, &FONT_T, "/32", C_DIM);
         num_text(v, slot_index + 1);
-        cv_text(104, 24, &FONT_T, "SLOT", C_GRAY);
-        cv_text(146, 22, &FONT_S, v, C_HI);
-        cv_text(164, 24, &FONT_T, "/4", C_DIM);
+        cv_text(104, 26, &FONT_T, "SLOT", C_GRAY);
+        cv_text(146, 24, &FONT_S, v, C_HI);
+        cv_text(164, 26, &FONT_T, "/4", C_DIM);
         num_text(v, preset_index / 8 + 1);
-        cv_text(8, 44, &FONT_T, "BANK", C_GRAY);
-        cv_text(44, 42, &FONT_S, v, C_HI);
-        cv_text(58, 44, &FONT_T, "/4", C_DIM);
-        cv_text(78, 44, &FONT_T, BANK_NAME[preset_index / 8], C_WHITE);
-        cv_text(8, 60, &FONT_T, "K1 PRESET K2 SLOT K3 BANK", C_DIM);
-        cv_text(8, 76, &FONT_T, slot_index < NSLOT && bank.slot[slot_index].used ? "SAVE overwrite  OCT transpose" : "SAVE store  OCT transpose", C_DIM);
+        cv_text(8, 46, &FONT_T, "BANK", C_GRAY);
+        cv_text(44, 44, &FONT_S, v, C_HI);
+        cv_text(58, 46, &FONT_T, "/4", C_DIM);
+        cv_text(78, 46, &FONT_T, BANK_NAME[preset_index / 8], C_WHITE);
+        cv_text(8, 64, &FONT_T, "K1 PRESET K2 SLOT K3 BANK", C_DIM);
+        cv_text(8, 82, &FONT_T, slot_index < NSLOT && bank.slot[slot_index].used ? "SAVE overwrite" : "SAVE store", C_DIM);
         break;
     }
     cv_blit(0, 126);
 
-    /* page tabs */
-    cv_begin(240, 18, C_BLACK);
+    /* a bright bar crosses the page when it changes */
+    if (wipe_on) {
+        uint32_t dt = now - wipe_t0;
+        if (dt > 160u) wipe_on = 0;
+        else {
+            int32_t x = (int32_t)((float)dt / 160.0f * 240.0f);
+            cv_begin(240, 12, C_BLACK);
+            cv_rect(x, 0, 3, 12, C_WHITE);
+            cv_blit(0, 196);
+        }
+    }
+
+    /* page tabs: a lit pill on the current page */
+    cv_begin(240, 20, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
         int32_t x = i * 30;
         if (i == page) {
-            cv_rect(x + 1, 2, 29, 14, C_LINE);
-            cv_text(x + 3, 4, &FONT_T, PAGE_NAME[i], C_HI);
+            cv_rect(x + 1, 3, 28, 15, C_WHITE);
+            cv_text(x + 3, 5, &FONT_T, PAGE_NAME[i], C_BLACK);
         } else {
-            cv_text(x + 3, 4, &FONT_T, PAGE_NAME[i], C_DIM);
+            cv_text(x + 3, 6, &FONT_T, PAGE_NAME[i], C_DIM);
         }
     }
-    cv_blit(0, 222);
-
-    /* what the last encoder did, for a moment: PRESET / SELECT / ALGO */
-    if (osd_kind && plat_ms() < osd_until) {
-        cv_begin(240, 16, C_BLACK);
-        if (osd_kind == 1) {
-            num_text(v, preset_index + 1);
-            cv_text(8, 3, &FONT_T, "PRESET", C_HI);
-            cv_text(58, 3, &FONT_T, v, C_WHITE);
-            cv_text(84, 3, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
-        } else if (osd_kind == 2) {
-            num_text(v, selected + 1);
-            cv_text(8, 3, &FONT_T, "SELECT", C_HI);
-            cv_text(56, 3, &FONT_T, "G", C_GRAY);
-            cv_text(64, 3, &FONT_T, v, C_WHITE);
-        } else {
-            cv_text(8, 3, &FONT_T, "ALGO", C_HI);
-            cv_text(46, 3, &FONT_T, PAGE_NAME[page], C_WHITE);
-        }
-        cv_blit(0, 206);
-    }
+    cv_blit(0, 220);
 }
 
 static void key_edges(uint32_t keys)
@@ -1586,6 +1612,7 @@ void app_frame(void)
     if (pressed & (1u << B_EDIT)) {
         page = (uint8_t)((page + 1) % NPAGES);
         anim_start(ANIM_BLINK, now);
+        wipe_on = 1; wipe_t0 = now;
     }
     if (pressed & (1u << B_HOME)) {
         page = PAGE_GEN;
