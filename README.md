@@ -4,6 +4,20 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M18: one page, one job — and a deeper sequencer
+
+![The SEQ SHAPE page](docs/m18.png)
+
+Each page now does one thing, and switches its own sub-modes:
+
+- **GEN**: cards, or **hold SEL** for the selected engine's parameters (wave/PWM, table/morph,
+  ratio/index/feedback, colour) — four parameter cards
+- **SEQ**: three sub-modes on the REC tap — **STEP** (note, velocity, gate), **SHAPE** (ratchet 1-4,
+  probability, tie) and **GROOVE** (length, swing, key, evolve, moved here from MOTIF)
+- **MOTIF**: style and euclid only
+
+The sequencer plays the new step data: a ratchet retriggers the step 2-4 times inside its slot, a
+probability skips it that pass, and a tie holds it to the next step.
 ## M17: cards on every page
 
 ![The ENV page as cards](docs/m17.png)

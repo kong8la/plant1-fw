@@ -1,0 +1,50 @@
+wait 1300
+# SEQ page has three sub-modes: STEP / SHAPE / GROOVE (tap REC)
+tap HOME
+tap SEQ
+tap SEQ
+wait 30
+expect page 6
+expect seqmode 0
+turn K1 1
+wait 30
+expect seqsel 1
+turn K2 2
+wait 30
+expect seqnote 5
+turn K3 2
+wait 30
+shot seq-step.png
+tap REC
+wait 30
+expect seqmode 1
+turn K2 2
+wait 30
+expect ratchet 3
+turn K3 2
+wait 30
+expect prob 100
+turn K4 1
+wait 30
+expect tie 1
+shot seq-shape.png
+tap REC
+wait 30
+expect seqmode 2
+expect len 16
+turn K1 -2
+wait 30
+expect len 14
+turn K2 2
+wait 30
+expect swing 10
+turn K3 1
+wait 30
+expect key 1
+turn K4 1
+wait 30
+expect evolve 1
+shot seq-groove.png
+tap REC
+wait 30
+expect seqmode 0

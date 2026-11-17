@@ -1,0 +1,27 @@
+wait 1300
+# GEN page: tap SEL cycles slots, hold SEL shows the engine parameters
+tap HOME
+wait 30
+expect page 0
+turn K1 1
+wait 30
+expect gtype 4
+shot gen-cards.png
+press SEL
+wait 800
+release SEL
+wait 40
+expect genmode 1
+shot gen-engine.png
+turn K2 5
+wait 30
+turn K3 2
+wait 30
+turn K4 2
+wait 30
+shot gen-engine2.png
+press SEL
+wait 800
+release SEL
+wait 40
+expect genmode 0
