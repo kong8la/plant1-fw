@@ -1,0 +1,51 @@
+wait 300
+# MOTIF page: STYLE -> EUCLID -> GROOVE (REC cycles)
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 7
+expect mmode 0
+tap REC
+wait 30
+expect mmode 1
+tap REC
+wait 30
+expect mmode 2
+# GROOVE: length, swing, key, evolve
+expect len 16
+expect swing 0
+expect key 0
+turn K1 -4
+wait 30
+expect len 12
+turn K1 4
+wait 30
+expect len 16
+turn K2 2
+wait 30
+expect swing 10
+turn K3 3
+wait 30
+expect key 3
+turn K4 1
+wait 30
+expect evolve 1
+shot groove.png
+# back to STYLE
+tap REC
+wait 30
+expect mmode 0
+# the sequencer runs the length: 3-step pattern, 16 steps held
+tap HOME
+tap SEQ
+tap SEQ
+wait 700
+expect seq 1
+tap SEQ
+wait 30
+expect seq 0

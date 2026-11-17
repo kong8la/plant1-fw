@@ -26,7 +26,10 @@ wait 30
 turn K4 1
 wait 40
 shot euclid.png
-# and back
+# round the three modes
+tap REC
+wait 30
+expect mmode 2
 tap REC
 wait 30
 expect mmode 0

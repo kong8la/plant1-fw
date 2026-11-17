@@ -4,6 +4,17 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M14: groove
+
+![The GROOVE page](docs/m14.png)
+
+- **length**: the sequencer wraps at 1-16 steps, so a 7-step or 9-step figure is a real loop
+- **swing**: 0-60 % delay on every second step
+- **key**: the pattern transposes to any of the twelve keys, so a saved motif plays in C or F#
+- **evolve**: every two bars the pattern mutates itself, a little, while it plays
+- **mutate** now stays inside the scale (it used to wander to arbitrary semitones)
+
+REC on the MOTIF page cycles STYLE → EUCLID → GROOVE; each page's four knobs are labelled on screen.
 ## M13: euclid, mutate and chords
 
 ![The EUCLID page](docs/m13.png)

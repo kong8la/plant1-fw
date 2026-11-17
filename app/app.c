@@ -63,9 +63,10 @@ typedef struct {
     seqstep_t seq[16];
     uint8_t genre, density, scale;
     uint16_t seed;
-    uint8_t motif_mode;                  /* 0 style, 1 euclid */
+    uint8_t motif_mode;                  /* 0 style, 1 euclid, 2 groove */
     uint8_t e_steps, e_hits, e_rot;
     uint8_t chord;
+    uint8_t seq_len, swing, key, evolve;
 } patch_t;
 
 static patch_t P;
@@ -432,6 +433,7 @@ static void preset_load(uint8_t i)
     P.motif_mode = 0;
     P.e_steps = 8; P.e_hits = 5; P.e_rot = 0;
     P.chord = 0;
+    P.seq_len = 16; P.swing = 0; P.key = 0; P.evolve = 0;
     {
         static const int8_t seed[16] = {0, 3, 7, 10, 12, 10, 7, 3, 0, 7, 12, 15, 12, 7, 3, 0};
         for (k = 0; k < 16; k++) {
@@ -1025,7 +1027,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 8;
+    bank.ver = 9;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -1037,7 +1039,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 8 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 9 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -1387,6 +1389,22 @@ static void draw(void)
             cv_text(8, 56, &FONT_T, "SEED", C_GRAY);
             cv_text(48, 54, &FONT_S, v, C_HI);
             cv_text(8, 78, &FONT_T, "K4 ROLL  REC=EUCLID", C_DIM);
+        } else if (P.motif_mode == 2) {
+            cv_text(8, 2, &FONT_S, "GROOVE", C_GRAY);
+            num_text(v, P.seq_len);
+            cv_text(8, 34, &FONT_T, "LEN", C_GRAY);
+            cv_text(44, 32, &FONT_S, v, C_HI);
+            num_text(v, P.swing);
+            cv_text(90, 34, &FONT_T, "SWING", C_GRAY);
+            cv_text(140, 32, &FONT_S, v, C_HI);
+            cv_text(8, 56, &FONT_T, "KEY", C_GRAY);
+            {
+                static const char *const N[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+                cv_text(44, 54, &FONT_S, N[P.key % 12], C_HI);
+            }
+            cv_text(110, 56, &FONT_T, "EVOLVE", C_GRAY);
+            cv_text(170, 54, &FONT_S, P.evolve ? "ON" : "OFF", P.evolve ? C_HI : C_DIM);
+
         } else {
             cv_text(8, 2, &FONT_S, "EUCLID", C_GRAY);
             num_text(v, P.e_steps);
@@ -1398,15 +1416,15 @@ static void draw(void)
             num_text(v, P.e_rot);
             cv_text(110, 40, &FONT_T, "ROTATE", C_GRAY);
             cv_text(170, 38, &FONT_S, v, C_HI);
-            cv_text(8, 56, &FONT_T, "K4 WRITE", C_DIM);
+
         }
         for (i = 0; i < 16; i++) {
             int32_t x = 8 + i * 14;
             int32_t h = P.seq[i].on ? 6 + (P.seq[i].note % 12) : 2;
             if (h > 16) h = 16;
-            cv_rect(x, 78 - h, 10, h, P.seq[i].on ? C_HI : RGB(22, 31, 40));
+            cv_rect(x, 76 - h, 10, h, P.seq[i].on ? C_HI : RGB(22, 31, 40));
         }
-        cv_text(8, 84, &FONT_T, P.chord ? "CHORD  GLO=MUTATE  REC=SWITCH" : "GLO=MUTATE  REC=SWITCH", C_DIM);
+        cv_text(8, 84, &FONT_T, P.motif_mode == 0 ? "K1 STYLE K2 DENS K3 SCALE K4 ROLL" : P.motif_mode == 1 ? "K1 STEPS K2 HITS K3 ROT K4 WRITE" : "K1 LEN K2 SWING K3 KEY K4 EVOLVE", C_DIM);
         break;
     case PAGE_SEQ:
         for (i = 0; i < 16; i++) {
@@ -1490,7 +1508,7 @@ static void draw(void)
             cv_text(52, 3, &FONT_T, "all notes off", C_GRAY);
         } else if (osd_kind == 10) {
             cv_text(8, 3, &FONT_T, "MOTIF", C_HI);
-            cv_text(52, 3, &FONT_T, P.motif_mode ? "EUCLID" : "STYLE", C_WHITE);
+            cv_text(52, 3, &FONT_T, P.motif_mode == 0 ? "STYLE" : P.motif_mode == 1 ? "EUCLID" : "GROOVE", C_WHITE);
         } else if (osd_kind == 11) {
             cv_text(8, 3, &FONT_T, "CHORD", C_HI);
             cv_text(52, 3, &FONT_T, P.chord ? "ON" : "OFF", C_WHITE);
@@ -1733,7 +1751,8 @@ static void motif_mutate(void)
             n++;
             P.seq[k].on = (uint8_t)!P.seq[k].on;
             if (P.seq[k].on) {
-                P.seq[k].note = (int8_t)((P.seq[k].note + 2 + (int)(mrnd() % 7)) % 25);
+                const int8_t *sc = SCALE_STEPS[P.scale & 3];
+                P.seq[k].note = (int8_t)(sc[mrnd() % 7] + ((mrnd() % 3) == 0 ? 12 : 0));
                 P.seq[k].vel = (uint8_t)(80 + mrnd() % 40);
                 P.seq[k].gate = (uint8_t)(40 + mrnd() % 50);
             }
@@ -1771,16 +1790,18 @@ void app_seq_frame(uint32_t keys, uint32_t now)
     static uint32_t next_at, off_at;
     static uint8_t step;
     uint32_t ms = 15000u / (P.bpm ? P.bpm : 120u);
+    uint8_t len = P.seq_len < 1 ? 1 : (P.seq_len > 16 ? 16 : P.seq_len);
     int i;
+    static uint32_t bars;
 
     if (!P.seq_on) return;
-    if (seq_at == 0xFF) { step = 0; next_at = now; off_at = 0; seq_at = 0; }
+    if (seq_at == 0xFF) { step = 0; next_at = now; off_at = 0; seq_at = 0; bars = 0; }
     if (off_at && now >= off_at) { seq_rel(); if (P.chord) seq_chord_rel(); off_at = 0; }
     if (now >= next_at) {
         seqstep_t *st = &P.seq[step];
-        uint8_t root = 48;
+        uint8_t root = (uint8_t)(48 + P.key);
         for (i = 0; i < NKEYS; i++)
-            if (keys & (1u << i)) { root = (uint8_t)(53 + i); break; }
+            if (keys & (1u << i)) { root = (uint8_t)(53 + i + P.key); break; }
         seq_rel();
         if (st->on) {
             const int8_t *sc = SCALE_STEPS[P.scale & 3];
@@ -1801,9 +1822,13 @@ void app_seq_frame(uint32_t keys, uint32_t now)
             }
             off_at = now + ms * (uint32_t)fm_clampf((float)st->gate, 5.0f, 95.0f) / 100u;
         }
-        next_at = now + ms;
-        step = (uint8_t)((step + 1) % 16);
+        next_at = now + ms + ((step & 1u) ? (ms * (uint32_t)P.swing) / 100u : 0u);
+        step = (uint8_t)((step + 1) % len);
         seq_at = (uint8_t)step;
+        if (++bars >= (uint32_t)len * 2u) {
+            bars = 0;
+            if (P.evolve) motif_mutate();
+        }
     }
 }
 
@@ -2004,7 +2029,7 @@ void app_frame(void)
                 case B_REC: {
                     static uint32_t last_tap;
                     if (page == PAGE_MOTIF) {
-                        P.motif_mode = (uint8_t)!P.motif_mode;
+                        P.motif_mode = (uint8_t)((P.motif_mode + 1) % 3);
                         osd_kind = 10; osd_until = now + 900u;
                         break;
                     }
@@ -2081,9 +2106,11 @@ void app_frame(void)
             if (P.motif_mode == 0) {
                 P.genre = (uint8_t)((P.genre + (d > 0 ? 1 : 5)) % 6);
                 motif_generate();
-            } else {
+            } else if (P.motif_mode == 1) {
                 P.e_steps = (uint8_t)clamp((int32_t)P.e_steps + (d > 0 ? 1 : -1), 2, 16);
                 euclid_generate();
+            } else {
+                P.seq_len = (uint8_t)clamp((int32_t)P.seq_len + (d > 0 ? 1 : -1), 1, 16);
             }
             break;
         default:
@@ -2133,9 +2160,11 @@ void app_frame(void)
             if (P.motif_mode == 0) {
                 P.density = (uint8_t)clamp((int32_t)P.density + (d > 0 ? 1 : -1), 1, 16);
                 motif_generate();
-            } else {
+            } else if (P.motif_mode == 1) {
                 P.e_hits = (uint8_t)clamp((int32_t)P.e_hits + (d > 0 ? 1 : -1), 1, P.e_steps);
                 euclid_generate();
+            } else {
+                P.swing = (uint8_t)clamp((int32_t)P.swing + (d > 0 ? 5 : -5), 0, 60);
             }
             break;
         default:
@@ -2182,9 +2211,11 @@ void app_frame(void)
             if (P.motif_mode == 0) {
                 P.scale = (uint8_t)((P.scale + (d > 0 ? 1 : 3)) & 3);
                 motif_generate();
-            } else {
+            } else if (P.motif_mode == 1) {
                 P.e_rot = (uint8_t)((P.e_rot + (d > 0 ? 1 : 15)) & 15);
                 euclid_generate();
+            } else {
+                P.key = (uint8_t)((P.key + (d > 0 ? 1 : 11)) % 12);
             }
             break;
         }
@@ -2225,9 +2256,11 @@ void app_frame(void)
                 P.seed = (uint16_t)((P.seed + (d > 0 ? 1 : 9999)) % 10000);
                 motif_generate();
                 anim_start(ANIM_SWEEP, now);
-            } else {
+            } else if (P.motif_mode == 1) {
                 euclid_generate();
                 anim_start(ANIM_SWEEP, now);
+            } else {
+                P.evolve = (uint8_t)!P.evolve;
             }
             break;
         }
@@ -2307,6 +2340,11 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "esteps")) { *got = P.e_steps; return 1; }
     if (!strcmp(what, "ehits")) { *got = P.e_hits; return 1; }
     if (!strcmp(what, "chord")) { *got = P.chord; return 1; }
+    if (!strcmp(what, "len")) { *got = P.seq_len; return 1; }
+    if (!strcmp(what, "swing")) { *got = P.swing; return 1; }
+    if (!strcmp(what, "key")) { *got = P.key; return 1; }
+    if (!strcmp(what, "evolve")) { *got = P.evolve; return 1; }
+    if (!strcmp(what, "mmode2")) { *got = P.motif_mode; return 1; }
     if (!strcmp(what, "mutate")) { motif_mutate(); *got = 1; return 1; }
     if (!strcmp(what, "motifon")) { int c = 0, k; for (k = 0; k < 16; k++) if (P.seq[k].on) c++; *got = c; return 1; }
     if (!strcmp(what, "seqstep")) { *got = seq_at; return 1; }
