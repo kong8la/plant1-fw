@@ -17,7 +17,7 @@
 enum { G_OFF, G_ANALOG, G_WT, G_FM, G_NOISE };
 enum { W_SAW, W_SQUARE, W_PULSE, W_SINE };
 enum { F_OFF, F_LP, F_HP, F_BP, F_NOTCH };
-enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_SEQ, PAGE_MOTIF, PAGE_PRESET, NPAGES };
+enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_SEQ, PAGE_MOTIF, PAGE_MACRO, PAGE_PRESET, NPAGES };
 enum { SEQ_STEP, SEQ_SHAPE, SEQ_GROOVE };
 enum { LFO_SIN, LFO_TRI, LFO_SAW, LFO_SQR };
 enum { LT_CUT, LT_TREM };
@@ -28,6 +28,8 @@ typedef struct {
     int8_t tune;
     float level, pan, cut, res;
     float pwm, morph, ratio, index, fb, color;
+    uint8_t fm_src;                      /* 0 none, 1-4: that generator's output modulates this one */
+    float fm_amt;
 } gen_t;
 
 #define FX_MAX 5
@@ -36,8 +38,8 @@ enum { FX_OFF, FX_DRIVE, FX_CHORUS, FX_DELAY, FX_REVERB, FX_COMP };
 typedef struct { uint8_t on, type; float p1, p2, p3; } fx_t;
 
 /* modulation: a source, a destination (slot * 3 + parameter) and a depth */
-#define NROUTE 4
-enum { SRC_OFF, SRC_ENV1, SRC_ENV2, SRC_LFO1, SRC_LFO2, SRC_VELO };
+#define NROUTE 8
+enum { SRC_OFF, SRC_ENV1, SRC_ENV2, SRC_LFO1, SRC_LFO2, SRC_VELO, SRC_KEY, SRC_RND, SRC_M1, SRC_M2, SRC_M3, SRC_M4, NSRC };
 enum { DST_LVL, DST_CUT, DST_PITCH };
 typedef struct { uint8_t on, src, dst; float amt; } route_t;
 
@@ -68,11 +70,14 @@ typedef struct {
     uint8_t e_steps, e_hits, e_rot;
     uint8_t chord;
     uint8_t seq_len, swing, key, evolve;
+    float macro[4];
 } patch_t;
 
 static patch_t P;
+static uint32_t mseed;
+static uint32_t mrnd(void);
 static uint8_t selected, page, preset_index, octave, fx_sel, env_sel, lfo_sel, route_sel;
-static uint8_t seq_voice, seq_sel, seq_at, seq_mode, gen_mode;
+static uint8_t seq_voice, seq_sel, seq_at, seq_mode, gen_mode, macro_sel;
 static uint8_t osd_kind;
 static uint32_t osd_until;
 static uint32_t btn_down_at[NB];
@@ -442,6 +447,7 @@ static void preset_load(uint8_t i)
     P.e_steps = 8; P.e_hits = 5; P.e_rot = 0;
     P.chord = 0;
     P.seq_len = 16; P.swing = 0; P.key = 0; P.evolve = 0;
+    P.macro[0] = P.macro[1] = P.macro[2] = P.macro[3] = 0.0f;
     {
         static const int8_t seed[16] = {0, 3, 7, 10, 12, 10, 7, 3, 0, 7, 12, 15, 12, 7, 3, 0};
         for (k = 0; k < 16; k++) {
@@ -719,6 +725,7 @@ typedef struct {
     float fbprev[NGEN];
     float pink[NGEN];
     float env, env2, lfo_ph, lfo2_ph, lfo_val, lfo2_val, mod[NGEN * 3];
+    float gout[NGEN], rnd;
     float inc[NGEN][UNI_MAX];
     float panL[NGEN][UNI_MAX], panR[NGEN][UNI_MAX];
     float norm;
@@ -813,6 +820,7 @@ static void voice_start(voice_t *v, uint8_t note, float vel)
     v->active = 1;
     v->note = note;
     v->vel = vel;
+    v->rnd = (float)(mrnd() % 1000u) / 1000.0f;
     v->target = (float)note + (float)octave * 12.0f;
     v->freq = v->target;
     if (v->env < 0.02f) v->env = 0.0f;      /* a reused voice keeps its level: no click */
@@ -843,10 +851,14 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
         gen_t *G = &P.gen[g];
         float sumL = 0.0f, sumR = 0.0f;
         if (!G->on || G->type == G_OFF || G->level <= 0.0f) continue;
+        {
+        float fmo = G->fm_src ? v->gout[(G->fm_src - 1) % NGEN] * G->fm_amt * 0.5f : 0.0f;
         for (u = 0; u < P.uni; u++) {
             float dt = v->inc[g][u];
             float ph = v->phase[g][u];
             float s = 0.0f;
+
+            if (fmo != 0.0f) { ph += fmo; ph -= (float)(int)ph; if (ph < 0.0f) ph += 1.0f; }
             if (G->type == G_ANALOG) {
                 if (G->wave == W_SAW) s = 2.0f * ph - 1.0f - polyblep(ph, dt);
                 else if (G->wave == W_SQUARE) {
@@ -890,6 +902,8 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
             sumL += s * v->panL[g][u];
             sumR += s * v->panR[g][u];
         }
+        v->gout[g] = sumL - sumR;
+        }
         if (P.uni > 1) { sumL *= 0.7071f; sumR *= 0.7071f; }
         if (G->ftype) {
             float mono = (sumL + sumR) * 0.5f;
@@ -923,7 +937,7 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         voice_t *vv = &V[v];
         if (!vv->active) continue;
         int r;
-        float src[6];
+        float src[NSRC];
         vv->lfo_ph += ldt * P.lfo_rate;
         if (vv->lfo_ph >= 1.0f) vv->lfo_ph -= (float)(int)vv->lfo_ph;
         vv->lfo2_ph += ldt * P.lfo2_rate;
@@ -936,10 +950,16 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
         src[SRC_LFO1] = vv->lfo_val;
         src[SRC_LFO2] = vv->lfo2_val;
         src[SRC_VELO] = vv->vel;
+        src[SRC_KEY] = fm_clampf(((float)vv->note - 48.0f) / 24.0f, -1.0f, 1.0f);
+        src[SRC_RND] = vv->rnd;
+        src[SRC_M1] = P.macro[0];
+        src[SRC_M2] = P.macro[1];
+        src[SRC_M3] = P.macro[2];
+        src[SRC_M4] = P.macro[3];
         for (g = 0; g < NGEN * 3; g++) vv->mod[g] = 0.0f;
         for (r = 0; r < NROUTE; r++)
             if (P.route[r].on && P.route[r].dst < NGEN * 3)
-                vv->mod[P.route[r].dst] += src[P.route[r].src & 7] * P.route[r].amt;
+                vv->mod[P.route[r].dst] += src[P.route[r].src % NSRC] * P.route[r].amt;
         {
             float base = 8.1757989f * fm_exp2f(vv->freq * (1.0f / 12.0f));
             float lsum = 0.0f;
@@ -1036,7 +1056,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 9;
+    bank.ver = 11;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -1048,7 +1068,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 9 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 11 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -1069,10 +1089,10 @@ static void slot_pick(int d)
 /* ------------------------------------------------------------------- UI --- */
 static const char *const GEN_NAME[5] = {"OFF", "ANALOG", "WAVETABLE", "FM", "NOISE"};
 static const char *const FTYPE_NAME[5] = {"OFF", "LP", "HP", "BP", "NOTCH"};
-static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "SEQ", "MOTIF", "PATCH"};
+static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "SEQ", "MOT", "MAC", "PCH"};
 static const char *const FX_NAME[6] = {"OFF", "DRIVE", "CHORUS", "DELAY", "REVERB", "COMP"};
 static const char *const LFO_NAME[4] = {"SIN", "TRI", "SAW", "SQR"};
-static const char *const SRC_NAME[6] = {"--", "ENV1", "ENV2", "LFO1", "LFO2", "VELO"};
+static const char *const SRC_NAME[NSRC] = {"--", "ENV1", "ENV2", "LFO1", "LFO2", "VELO", "KEY", "RND", "M1", "M2", "M3", "M4"};
 static const char *const DST_NAME[3] = {"LVL", "CUT", "PIT"};
 static const char *const PAT_NAME[4] = {"UP", "DOWN", "UPDN", "RAND"};
 static const char *const RATE_NAME[5] = {"1/4", "1/8", "1/8T", "1/16", "1/16T"};
@@ -1094,6 +1114,7 @@ static const char *const K_LABEL[NPAGES][4] = {
     {"PATTERN", "RATE", "OCT", "GATE"},
     {"STEP", "NOTE", "VEL", "GATE"},
     {"STYLE", "DENSITY", "SCALE", "ROLL"},
+    {"M1", "M2", "M3", "M4"},
     {"PRESET", "SLOT", "BANK", "-"}
 };
 
@@ -1259,9 +1280,6 @@ static void draw_lfo_graph(int32_t x, int32_t y, int32_t w, int32_t h)
         cv_rect(x + i, yy, 1, 1, C_HI);
     }
 }
-
-static uint32_t mseed;
-static uint32_t mrnd(void);
 
 /* a tree grows out of the ground, then the name, then a splash line: the shrub boot, in our palette */
 static float boot_sway;
@@ -1452,11 +1470,27 @@ static void draw(void)
         char txt[8];
         int k;
 
-        cv_text(8, 1, &FONT_T, "GENERATORS", C_GRAY);
+        cv_text(8, 1, &FONT_T, gen_mode ? "CROSS FM" : "GENERATORS", C_GRAY);
         num_text(v, selected + 1);
         cv_text(120, 1, &FONT_T, "G", C_DIM);
         cv_text(128, 1, &FONT_T, v, C_HI);
         cv_text(142, 1, &FONT_T, GEN_NAME[G->type], C_WHITE);
+        if (gen_mode) {
+            int k2;
+            for (k2 = 0; k2 < NGEN; k2++) {
+                gen_t *E = &P.gen[k2];
+                int32_t cx = (k2 & 1) ? 121 : 2;
+                int32_t cy = (k2 >> 1) ? 74 : 14;
+                draw_card(cx, cy, 117, 56, k2 == selected ? C_HI : RGB(22, 31, 40));
+                cv_text(cx + 6, cy + 4, &FONT_T, k2 == 0 ? "G1 FM" : k2 == 1 ? "G2 FM" : k2 == 2 ? "G3 FM" : "G4 FM", C_HI);
+                cv_text(cx + 6, cy + 18, &FONT_T, "SRC", C_GRAY);
+                cv_text(cx + 40, cy + 16, &FONT_S, E->fm_src ? (E->fm_src == 1 ? "G1" : E->fm_src == 2 ? "G2" : E->fm_src == 3 ? "G3" : "G4") : "--", C_WHITE);
+                num_text(txt, (int32_t)(E->fm_amt * 100.0f));
+                cv_text(cx + 6, cy + 38, &FONT_T, "AMT", C_GRAY);
+                cv_text(cx + 40, cy + 36, &FONT_S, txt, E->fm_src ? C_HI : C_DIM);
+            }
+            break;
+        }
         for (i = 0; i < NGEN; i++) {
             gen_t *E = &P.gen[i];
             int32_t cx = (i & 1) ? 121 : 2;
@@ -1532,18 +1566,18 @@ static void draw(void)
         cv_text(8, 1, &FONT_T, "ROUTES", C_GRAY);
         for (r = 0; r < NROUTE; r++) {
             route_t *R = &P.route[r];
-            int32_t y = 13 + r * 32;
-            draw_card(2, y, 236, 29, r == route_sel ? C_HI : RGB(22, 31, 40));
+            int32_t y = 13 + r * 16;
+            draw_card(2, y, 236, 15, r == route_sel ? C_HI : RGB(22, 31, 40));
             num_text(v, r + 1);
-            cv_text(7, y + 4, &FONT_T, v, C_DIM);
-            cv_text(20, y + 3, &FONT_S, SRC_NAME[R->src], R->on ? C_HI : C_DIM);
-            cv_text(78, y + 5, &FONT_T, ">", C_DIM);
+            cv_text(7, y + 2, &FONT_T, v, C_DIM);
+            cv_text(20, y + 1, &FONT_T, SRC_NAME[R->src], R->on ? C_HI : C_DIM);
+            cv_text(62, y + 3, &FONT_T, ">", C_DIM);
             num_text(v, R->dst / 3 + 1);
-            cv_text(92, y + 3, &FONT_S, "G", C_GRAY);
-            cv_text(110, y + 3, &FONT_S, v, R->on ? C_HI : C_DIM);
-            cv_text(126, y + 3, &FONT_S, DST_NAME[R->dst % 3], R->on ? C_HI : C_DIM);
-            cv_rect(168, y + 12, 60, 5, RGB(22, 31, 40));
-            if (R->on) cv_rect(168, y + 12, (int32_t)(fm_clampf(fm_fabsf(R->amt), 0.0f, 1.0f) * 60.0f), 5, C_GRAY);
+            cv_text(74, y + 1, &FONT_T, "G", C_GRAY);
+            cv_text(84, y + 1, &FONT_T, v, R->on ? C_HI : C_DIM);
+            cv_text(96, y + 1, &FONT_T, DST_NAME[R->dst % 3], R->on ? C_HI : C_DIM);
+            cv_rect(140, y + 6, 92, 4, RGB(22, 31, 40));
+            if (R->on) cv_rect(140, y + 6, (int32_t)(fm_clampf(fm_fabsf(R->amt), 0.0f, 1.0f) * 92.0f), 4, C_GRAY);
         }
         break;
     }
@@ -1690,6 +1724,22 @@ static void draw(void)
         }
         break;
     }
+    case PAGE_MACRO: {
+        int k;
+        cv_text(8, 1, &FONT_T, "MACROS", C_GRAY);
+        cv_text(150, 1, &FONT_T, "a route source", C_DIM);
+        for (k = 0; k < 4; k++) {
+            int32_t cx = 2 + (k & 1) * 119;
+            int32_t cy = 14 + (k >> 1) * 62;
+            draw_card(cx, cy, 117, 56, k == macro_sel ? C_HI : RGB(22, 31, 40));
+            cv_text(cx + 6, cy + 4, &FONT_T, k == 0 ? "M1" : k == 1 ? "M2" : k == 2 ? "M3" : "M4", C_GRAY);
+            num_text(v, (int32_t)(P.macro[k] * 100.0f));
+            cv_text(cx + 6, cy + 16, &FONT_S, v, C_HI);
+            cv_rect(cx + 6, cy + 40, 100, 6, RGB(22, 31, 40));
+            cv_rect(cx + 6, cy + 40, (int32_t)(fm_clampf(P.macro[k], 0.0f, 1.0f) * 100.0f), 6, C_HI);
+        }
+        break;
+    }
     default: {
         static const char *const NM[3] = {"PATCH", "SLOT", "BANK"};
         int k;
@@ -1719,7 +1769,9 @@ static void draw(void)
     {
         const char *kl[4];
         for (i = 0; i < 4; i++) kl[i] = K_LABEL[page][i];
-        if (page == PAGE_SEQ) {
+        if (page == PAGE_GEN && gen_mode) { kl[0] = "SRC"; kl[1] = "AMT"; kl[2] = "-"; kl[3] = "-"; }
+        else if (page == PAGE_MACRO) { kl[0] = "M1"; kl[1] = "M2"; kl[2] = "M3"; kl[3] = "M4"; }
+        else if (page == PAGE_SEQ) {
             if (seq_mode == SEQ_SHAPE) { kl[0] = "STEP"; kl[1] = "RATCHET"; kl[2] = "PROB"; kl[3] = "TIE"; }
             else if (seq_mode == SEQ_GROOVE) { kl[0] = "LENGTH"; kl[1] = "SWING"; kl[2] = "KEY"; kl[3] = "EVOLVE"; }
         } else if (page == PAGE_MOTIF) {
@@ -1739,9 +1791,9 @@ static void draw(void)
     /* page tabs */
     cv_begin(240, 24, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
-        int32_t x = i * 26;
+        int32_t x = i * 24;
         if (i == page) {
-            cv_rect(x + 1, 3, 25, 18, C_HI);
+            cv_rect(x + 1, 3, 23, 18, C_HI);
             cv_text(x + 2, 6, &FONT_T, PAGE_NAME[i], C_BLACK);
         } else {
             cv_text(x + 2, 7, &FONT_T, PAGE_NAME[i], C_DIM);
@@ -2222,6 +2274,12 @@ void app_frame(void)
                         osd_kind = 11; osd_until = now + 900u;
                     }
                     break;
+                case B_SEL:
+                    if (page == PAGE_GEN) {
+                        gen_mode = (uint8_t)!gen_mode;
+                        osd_kind = 13; osd_until = now + 900u;
+                    }
+                    break;
                 case B_GLO: {
                     if (page == PAGE_MOTIF) {
                         motif_mutate();
@@ -2369,10 +2427,7 @@ void app_frame(void)
                 G->type = (uint8_t)(((G->type - 1 + (d > 0 ? 1 : 3)) % 4) + 1);
                 G->on = 1;
                 G->ftype = G->ftype ? G->ftype : F_LP;
-            } else if (G->type == G_ANALOG) G->wave = (uint8_t)((G->wave + (d > 0 ? 1 : 3)) & 3);
-            else if (G->type == G_WT) G->table = (uint8_t)((G->table + (d > 0 ? 1 : 3)) & 3);
-            else if (G->type == G_FM) G->ratio = fm_clampf(G->ratio * fm_exp2f((float)d * 0.1f), 0.25f, 12.0f);
-            else G->color = fm_clampf(G->color + (float)d * 0.05f, 0.0f, 1.0f);
+            } else G->fm_src = (uint8_t)((G->fm_src + (d > 0 ? 1 : 4)) % 5);
             break;
         }
         case PAGE_ENV:
@@ -2388,6 +2443,9 @@ void app_frame(void)
             break;
         case PAGE_FX:
             fx_sel = (uint8_t)((fx_sel + (d > 0 ? 1 : FX_MAX - 1)) % FX_MAX);
+            break;
+        case PAGE_MACRO:
+            macro_sel = (uint8_t)((macro_sel + (d > 0 ? 1 : 3)) & 3);
             break;
         case PAGE_ARP:
             P.arp_pattern = (uint8_t)((P.arp_pattern + (d > 0 ? 1 : 3)) & 3);
@@ -2421,10 +2479,7 @@ void app_frame(void)
         case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
             if (gen_mode == 0) G->level = fm_clampf(G->level + (float)d * 0.02f, 0.0f, 1.0f);
-            else if (G->type == G_ANALOG) G->pwm = fm_clampf(G->pwm + (float)d * 0.02f, 0.05f, 0.95f);
-            else if (G->type == G_WT) G->morph = fm_clampf(G->morph + (float)d * 0.02f, 0.0f, 1.0f);
-            else if (G->type == G_FM) G->index = fm_clampf(G->index + (float)d * 0.1f, 0.0f, 12.0f);
-            else G->cut = fm_clampf(G->cut * fm_exp2f((float)d * 0.2f), 20.0f, 18000.0f);
+            else G->fm_amt = fm_clampf(G->fm_amt + (float)d * 0.05f, 0.0f, 2.0f);
             break;
         }
         case PAGE_ENV:
@@ -2437,7 +2492,7 @@ void app_frame(void)
             break;
         case PAGE_MOD: {
             route_t *R = &P.route[route_sel];
-            R->src = (uint8_t)((R->src + (d > 0 ? 1 : 5)) % 6);
+            R->src = (uint8_t)((R->src + (d > 0 ? 1 : NSRC - 1)) % NSRC);
             if (R->src && !R->on) { R->on = 1; R->amt = 0.30f; }
             break;
         }
@@ -2447,6 +2502,9 @@ void app_frame(void)
             F->p1 = fm_clampf(F->p1 + (float)d * 0.02f, 0.0f, 1.0f);
             break;
         }
+        case PAGE_MACRO:
+            P.macro[macro_sel] = fm_clampf(P.macro[macro_sel] + (float)d * 0.05f, 0.0f, 1.0f);
+            break;
         case PAGE_ARP:
             P.arp_rate = (uint8_t)((P.arp_rate + (d > 0 ? 1 : 4)) % 5);
             break;
@@ -2484,7 +2542,7 @@ void app_frame(void)
         case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
             if (gen_mode == 0) G->pan = fm_clampf(G->pan + (float)d * 0.05f, -1.0f, 1.0f);
-            else G->cut = fm_clampf(G->cut * fm_exp2f((float)d * 0.2f), 20.0f, 18000.0f);
+            else G->pwm = fm_clampf(G->pwm + (float)d * 0.02f, 0.05f, 0.95f);
             break;
         }
         case PAGE_ENV:
@@ -2509,6 +2567,9 @@ void app_frame(void)
             break;
         case PAGE_ARP:
             P.arp_oct = (uint8_t)clamp((int32_t)P.arp_oct + (d > 0 ? 1 : -1), 1, 3);
+            break;
+        case PAGE_MACRO:
+            P.macro[macro_sel] = fm_clampf(P.macro[macro_sel] + (float)d * 0.05f, 0.0f, 1.0f);
             break;
         case PAGE_SEQ:
             if (seq_mode == SEQ_STEP) {
@@ -2540,7 +2601,7 @@ void app_frame(void)
         case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
             if (gen_mode == 0) G->tune = (int8_t)clamp((int32_t)G->tune + (d > 0 ? 1 : -1), -24, 24);
-            else G->res = fm_clampf(G->res + (float)d * 0.02f, 0.0f, 0.95f);
+            else G->cut = fm_clampf(G->cut * fm_exp2f((float)d * 0.2f), 20.0f, 18000.0f);
             break;
         }
         case PAGE_ENV:
@@ -2561,6 +2622,9 @@ void app_frame(void)
             break;
         case PAGE_ARP:
             P.arp_gate = fm_clampf(P.arp_gate + (float)d * 0.02f, 0.05f, 0.95f);
+            break;
+        case PAGE_MACRO:
+            P.macro[macro_sel] = fm_clampf(P.macro[macro_sel] + (float)d * 0.05f, 0.0f, 1.0f);
             break;
         case PAGE_SEQ:
             if (seq_mode == SEQ_STEP) {
@@ -2669,6 +2733,15 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "density")) { *got = P.density; return 1; }
     if (!strcmp(what, "seed")) { *got = P.seed; return 1; }
     if (!strcmp(what, "motif")) { motif_generate(); *got = 1; return 1; }
+    if (!strcmp(what, "nroute")) { *got = NROUTE; return 1; }
+    if (!strcmp(what, "nsrc")) { *got = NSRC; return 1; }
+    if (!strcmp(what, "macro1")) { *got = (int32_t)(P.macro[0] * 100.0f); return 1; }
+    if (!strcmp(what, "macro4")) { *got = (int32_t)(P.macro[3] * 100.0f); return 1; }
+    if (!strcmp(what, "macsel")) { *got = macro_sel; return 1; }
+    if (!strcmp(what, "fmsrc")) { *got = P.gen[selected].fm_src; return 1; }
+    if (!strcmp(what, "fmamt")) { *got = (int32_t)(P.gen[selected].fm_amt * 100.0f); return 1; }
+    if (!strcmp(what, "route")) { *got = route_sel; return 1; }
+    if (!strcmp(what, "routesrc")) { *got = P.route[route_sel].src; return 1; }
     if (!strcmp(what, "seqmode")) { *got = seq_mode; return 1; }
     if (!strcmp(what, "genmode")) { *got = gen_mode; return 1; }
     if (!strcmp(what, "ratchet")) { *got = P.seq[seq_sel].ratchet; return 1; }

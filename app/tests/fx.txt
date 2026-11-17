@@ -26,8 +26,9 @@ tap EDIT
 tap EDIT
 tap EDIT
 tap EDIT
+tap EDIT
 wait 30
-expect page 8
+expect page 9
 turn K2 1
 wait 30
 expect slot 1

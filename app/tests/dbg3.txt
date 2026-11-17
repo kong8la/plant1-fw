@@ -1,0 +1,18 @@
+wait 1300
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 9
+turn K1 3
+wait 50
+expect preset 3
+turn K3 1
+wait 50
+expect preset 11

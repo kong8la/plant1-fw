@@ -1,6 +1,7 @@
 wait 1300
 expect preset 0
-# six EDITs reach PATCH (GEN ENV LFO MOD FX ARP PATCH)
+# nine EDITs reach PATCH (GEN ENV LFO MOD FX ARP SEQ MOTIF MACRO PATCH)
+tap EDIT
 tap EDIT
 tap EDIT
 tap EDIT
@@ -10,7 +11,7 @@ tap EDIT
 tap EDIT
 tap EDIT
 wait 30
-expect page 8
+expect page 9
 # K1 steps through the bank
 turn K1 3
 wait 30

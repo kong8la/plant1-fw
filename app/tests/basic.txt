@@ -11,7 +11,7 @@ expect note -1
 tap SEL
 wait 30
 expect sel 1
-# EDIT walks GEN -> ENV -> LFO -> MOD -> FX -> ARP -> SEQ -> PATCH
+# EDIT walks GEN -> ENV -> LFO -> MOD -> FX -> ARP -> SEQ -> MOTIF -> MACRO -> PATCH
 tap EDIT
 wait 30
 expect page 1
@@ -36,6 +36,9 @@ expect page 7
 tap EDIT
 wait 30
 expect page 8
+tap EDIT
+wait 30
+expect page 9
 # K1 on PATCH loads the next preset
 turn K1 1
 wait 30
