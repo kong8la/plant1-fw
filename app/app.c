@@ -1463,34 +1463,40 @@ static void draw(void)
     case PAGE_ENV: {
         float ea = env_sel ? P.e2a : P.a_ms, ed = env_sel ? P.e2d : P.d_ms;
         float es = env_sel ? P.e2s : P.s, er = env_sel ? P.e2r : P.r_ms;
-        draw_env_graph(8, 2, 224, 44, ea, ed, es, er);
-        cv_text(8, 50, &FONT_T, env_sel ? "MOD ENV" : "AMP ENV", C_WHITE);
-        cv_text(8, 60, &FONT_T, "A", C_GRAY);
-        num_text(v, (int32_t)ea);
-        cv_text(20, 60, &FONT_T, v, C_HI);
-        cv_text(62, 60, &FONT_T, "D", C_GRAY);
-        num_text(v, (int32_t)ed);
-        cv_text(74, 60, &FONT_T, v, C_HI);
-        cv_text(118, 60, &FONT_T, "S", C_GRAY);
-        num_text(v, (int32_t)(es * 100.0f));
-        cv_text(130, 60, &FONT_T, v, C_HI);
-        cv_text(176, 60, &FONT_T, "R", C_GRAY);
-        num_text(v, (int32_t)er);
-        cv_text(188, 60, &FONT_T, v, C_HI);
-        cv_text(8, 74, &FONT_T, "ENV=AMP/MOD  K1-K4 A D S R", C_DIM);
+        static const char *const L[4] = {"A", "D", "S", "R"};
+        float vals[4];
+        int k;
+        vals[0] = ea; vals[1] = ed; vals[2] = es * 100.0f; vals[3] = er;
+        draw_card(2, 1, 236, 44, RGB(22, 31, 40));
+        cv_text(8, 2, &FONT_T, env_sel ? "MOD ENV" : "AMP ENV", env_sel ? C_HI : C_WHITE);
+        draw_env_graph(10, 14, 220, 28, ea, ed, es, er);
+        for (k = 0; k < 4; k++) {
+            int32_t cx = 2 + k * 59;
+            draw_card(cx, 48, 57, 30, RGB(22, 31, 40));
+            cv_text(cx + 5, 50, &FONT_T, L[k], C_GRAY);
+            num_text(v, (int32_t)vals[k]);
+            cv_text(cx + 5, 60, &FONT_S, v, C_HI);
+        }
+
         break;
     }
     case PAGE_LFO:
-        draw_lfo_graph(8, 2, 224, 36);
-        cv_text(8, 44, &FONT_S, LFO_NAME[(lfo_sel ? P.lfo2_shape : P.lfo_shape) & 3], C_HI);
-        cv_text(62, 46, &FONT_T, "RATE", C_GRAY);
+        draw_card(2, 1, 236, 40, RGB(22, 31, 40));
+        cv_text(8, 2, &FONT_T, lfo_sel ? "LFO2" : "LFO1", lfo_sel ? C_HI : C_WHITE);
+        cv_text(46, 2, &FONT_T, LFO_NAME[(lfo_sel ? P.lfo2_shape : P.lfo_shape) & 3], C_GRAY);
+        draw_lfo_graph(10, 14, 220, 24);
+        draw_card(2, 44, 76, 30, RGB(22, 31, 40));
+        cv_text(7, 46, &FONT_T, "RATE", C_GRAY);
         hz_text(v, lfo_sel ? P.lfo2_rate : P.lfo_rate);
-        cv_text(100, 44, &FONT_S, v, C_HI);
-        cv_text(150, 46, &FONT_T, "AMT", C_GRAY);
+        cv_text(7, 56, &FONT_S, v, C_HI);
+        draw_card(82, 44, 76, 30, RGB(22, 31, 40));
+        cv_text(87, 46, &FONT_T, "AMOUNT", C_GRAY);
         num_text(v, (int32_t)((lfo_sel ? P.lfo2_amt : P.lfo_amt) * 100.0f));
-        cv_text(186, 44, &FONT_S, v, C_HI);
-        cv_text(8, 64, &FONT_T, lfo_sel ? "LFO2 -> MOD MATRIX" : "LFO1 -> CUTOFF/TREM", C_GRAY);
-        cv_text(8, 74, &FONT_T, "LFO=LFO1/2  K1 SHAPE K2 RATE K3 AMT", C_DIM);
+        cv_text(87, 56, &FONT_S, v, C_HI);
+        draw_card(162, 44, 76, 30, RGB(22, 31, 40));
+        cv_text(167, 46, &FONT_T, "TARGET", C_GRAY);
+        cv_text(167, 56, &FONT_S, lfo_sel ? "MATRIX" : (P.lfo_tgt == LT_CUT ? "CUTOFF" : "TREM"), C_HI);
+
         break;
     case PAGE_MOD: {
         int32_t y;
@@ -1598,22 +1604,25 @@ static void draw(void)
     case PAGE_FX:
         for (i = 0; i < FX_MAX; i++) {
             fx_t *F = &P.fx[i];
-            int32_t y = i * 15;
-            if (i == fx_sel) cv_rect(2, y, 236, 14, C_LINE);
-            cv_text(8, y + 1, &FONT_T, FX_NAME[F->type], F->on ? C_HI : C_DIM);
+            int32_t y = i * 12;
+            draw_card(2, y, 236, 12, i == fx_sel ? C_HI : RGB(22, 31, 40));
+            num_text(v, i + 1);
+            cv_text(7, y + 1, &FONT_T, v, C_DIM);
+            cv_text(20, y + 1, &FONT_T, FX_NAME[F->type], F->on ? C_HI : C_DIM);
             cv_text(96, y + 1, &FONT_T, F->on ? "ON" : "--", F->on ? C_HI : C_DIM);
             cv_rect(130, y + 5, 90, 3, RGB(22, 31, 40));
             if (F->on) cv_rect(130, y + 5, (int32_t)(fm_clampf(F->p3, 0.0f, 1.0f) * 90.0f), 3, C_GRAY);
         }
         {
             fx_t *F = &P.fx[fx_sel];
+            draw_card(2, 62, 236, 20, RGB(22, 31, 40));
             num_text(v, (int32_t)(F->p1 * 100.0f));
-            cv_text(8, 78, &FONT_T, "A", C_GRAY); cv_text(20, 78, &FONT_T, v, C_HI);
+            cv_text(8, 66, &FONT_T, "A", C_GRAY); cv_text(20, 66, &FONT_T, v, C_HI);
             num_text(v, (int32_t)(F->p2 * 100.0f));
-            cv_text(70, 78, &FONT_T, "B", C_GRAY); cv_text(82, 78, &FONT_T, v, C_HI);
+            cv_text(70, 66, &FONT_T, "B", C_GRAY); cv_text(82, 66, &FONT_T, v, C_HI);
             num_text(v, (int32_t)(F->p3 * 100.0f));
-            cv_text(132, 78, &FONT_T, "C", C_GRAY); cv_text(144, 78, &FONT_T, v, C_HI);
-            cv_text(176, 78, &FONT_T, "FX=toggle", C_DIM);
+            cv_text(132, 66, &FONT_T, "C", C_GRAY); cv_text(144, 66, &FONT_T, v, C_HI);
+            cv_text(178, 66, &FONT_T, "hold FX", C_DIM);
         }
         break;
     default:

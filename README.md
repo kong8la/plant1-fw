@@ -4,6 +4,13 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M17: cards on every page
+
+![The ENV page as cards](docs/m17.png)
+
+ENV, LFO and FX now use the same card language as the generator grid: a graph card with its title,
+then value cards (A/D/S/R; RATE/AMOUNT/TARGET), and the FX chain as five numbered row cards with a
+parameter card under them.
 ## M16: the generator grid
 
 ![The GEN page as a 2 x 2 grid of cards](docs/m16.png)
