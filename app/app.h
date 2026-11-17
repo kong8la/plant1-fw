@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT
  * PLANT-1 M8: every button and encoder does its label; declicked voices and a soft output. */
 #pragma once
+#define APP_PALETTE 2u          /* gfx.c PALETTES: CYAN, the browser PLANT-1 accent */
 #include <stdint.h>
 #include "plat.h"
 

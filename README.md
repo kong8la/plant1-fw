@@ -4,7 +4,10 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
-## M11: the panel, after JIANT
+## M11: the panel, after JIANT, in the browser's colours
+
+The screen uses the CYAN palette (APP_PALETTE 2), the browser PLANT-1's accent, with filled
+curves, segmented card meters and lit pill tabs.
 
 The control scheme follows the one JIANT FM documents (its manual, not its code): a section button
 takes you to that section, pressing it again walks the section's groups, and holding it runs that

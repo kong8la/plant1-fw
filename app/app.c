@@ -1158,19 +1158,28 @@ static void draw_env_graph(int32_t x, int32_t y, int32_t w, int32_t h, float a, 
 
     for (i = x; i <= xa; i++) {                        /* attack: 0 -> 1 */
         float k = (float)(i - x) / (float)(xa - x + 1);
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * k), 1, 1, C_HI);
+        int32_t yy = y + h - 1 - (int32_t)((float)(h - 2) * k);
+        cv_rect(i, yy, 1, y + h - 1 - yy, C_LINE);
+        cv_rect(i, yy, 1, 1, C_HI);
     }
     for (i = xa; i <= xd; i++) {                       /* decay: 1 -> s */
         float k = (float)(i - xa) / (float)(xd - xa + 1);
         float v = s + (1.0f - s) * fm_exp2f(-4.0f * k);
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * v), 1, 1, C_HI);
+        int32_t yy = y + h - 1 - (int32_t)((float)(h - 2) * v);
+        cv_rect(i, yy, 1, y + h - 1 - yy, C_LINE);
+        cv_rect(i, yy, 1, 1, C_HI);
     }
-    for (i = xd; i <= xs; i++)                         /* sustain */
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * s), 1, 1, C_HI);
+    for (i = xd; i <= xs; i++) {                       /* sustain */
+        int32_t yy = y + h - 1 - (int32_t)((float)(h - 2) * s);
+        cv_rect(i, yy, 1, y + h - 1 - yy, C_LINE);
+        cv_rect(i, yy, 1, 1, C_HI);
+    }
     for (i = xs; i <= xr; i++) {                       /* release: s -> 0 */
         float k = (float)(i - xs) / (float)(xr - xs + 1);
         float v = s * fm_exp2f(-4.0f * k);
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * v), 1, 1, C_HI);
+        int32_t yy = y + h - 1 - (int32_t)((float)(h - 2) * v);
+        cv_rect(i, yy, 1, y + h - 1 - yy, C_LINE);
+        cv_rect(i, yy, 1, 1, C_HI);
     }
 }
 
@@ -1180,6 +1189,9 @@ static void draw_lfo_graph(int32_t x, int32_t y, int32_t w, int32_t h)
     for (i = 0; i < w; i++) {
         float v = lfo_shape(P.lfo_shape, (float)i / (float)w);
         int32_t yy = y + h / 2 - (int32_t)(v * (float)(h / 2 - 1));
+        int32_t top = yy < y + h / 2 ? yy : y + h / 2;
+        int32_t hh = yy < y + h / 2 ? y + h / 2 - yy : yy - (y + h / 2);
+        if (hh > 0) cv_rect(x + i, top, 1, hh, C_LINE);
         cv_rect(x + i, yy, 1, 1, C_HI);
     }
 }
@@ -1227,7 +1239,7 @@ static void draw(void)
         gen_t *G = &P.gen[i];
         int32_t y = i * 20;
         int32_t k, lit;
-        if (i == selected) cv_rect(2, y + 1, 236, 19, C_LINE);
+        if (i == selected) cv_rect(2, y + 1, 236, 19, C_DIM);
         draw_slot_wave(8, y + 5, 36, 11, i, G->on ? C_HI : C_DIM);
         cv_text(50, y + 3, &FONT_XS, GEN_NAME[G->type], G->on ? (G->ftype ? C_HI : C_GRAY) : C_DIM);
         if (G->ftype) cv_text(108, y + 4, &FONT_T, FTYPE_NAME[G->ftype], C_DIM);
@@ -1386,6 +1398,11 @@ static void draw(void)
         cv_text(8, 82, &FONT_T, slot_index < NSLOT && bank.slot[slot_index].used ? "SAVE overwrite" : "SAVE store", C_DIM);
         break;
     }
+    if (wipe_on) {
+        uint32_t dt = now - wipe_t0;
+        if (dt > 160u) wipe_on = 0;
+        else cv_rect((int32_t)((float)dt / 160.0f * 236.0f), 2, 2, 90, C_HI);
+    }
     cv_blit(0, 126);
 
     if (osd_kind && plat_ms() < osd_until) {
@@ -1412,19 +1429,14 @@ static void draw(void)
             num_text(v, slot_index + 1);
             cv_text(140, 3, &FONT_T, v, C_WHITE);
         }
-        cv_blit(0, 204);
+        cv_blit(0, 28);
     }
 
-    /* a bright bar crosses the page when it changes */
+    /* the page-change sweep: a thin accent line inside the page band */
     if (wipe_on) {
         uint32_t dt = now - wipe_t0;
         if (dt > 160u) wipe_on = 0;
-        else {
-            int32_t x = (int32_t)((float)dt / 160.0f * 240.0f);
-            cv_begin(240, 12, C_BLACK);
-            cv_rect(x, 0, 3, 12, C_WHITE);
-            cv_blit(0, 196);
-        }
+        else cv_rect((int32_t)((float)dt / 160.0f * 236.0f), 2, 2, 90, C_HI);
     }
 
     /* page tabs: a lit pill on the current page */
@@ -1432,7 +1444,7 @@ static void draw(void)
     for (i = 0; i < NPAGES; i++) {
         int32_t x = i * 30;
         if (i == page) {
-            cv_rect(x + 1, 3, 28, 15, C_WHITE);
+            cv_rect(x + 1, 3, 28, 15, C_HI);
             cv_text(x + 3, 5, &FONT_T, PAGE_NAME[i], C_BLACK);
         } else {
             cv_text(x + 3, 6, &FONT_T, PAGE_NAME[i], C_DIM);
