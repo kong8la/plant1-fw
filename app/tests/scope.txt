@@ -1,4 +1,4 @@
-wait 300
+wait 1300
 turn PRESET 16
 wait 40
 key 7 down

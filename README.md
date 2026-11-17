@@ -4,6 +4,15 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M15: the boot animation
+
+![The boot screen](docs/m15.png)
+
+Shrub's idea, our plant: a tree grows out of the ground in about a second, then the name, then a
+Minecraft-style splash line that bobs ("grows on you"). Any key or button skips the rest.
+
+The running screen gained soft cards: each generator slot is a rounded card, the page sits in one,
+and the selected slot takes the accent.
 ## M14: groove
 
 ![The GROOVE page](docs/m14.png)

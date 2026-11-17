@@ -78,6 +78,13 @@ static uint32_t btn_down_at[NB];
 static uint8_t hold_hits;
 static uint8_t btn_hold_done[NB];
 static uint8_t osd_page;                  /* for the PAGE / SLOT / PRESET readout */
+#ifdef PLAT_HOST
+#define BOOT_MS 1200u
+#else
+#define BOOT_MS 2000u
+#endif
+static uint32_t boot_t0;
+static uint8_t booting = 1;
 
 #define SCOPE_N 56
 static int8_t scope_buf[SCOPE_N];
@@ -1148,6 +1155,28 @@ static float gen_shape(int g, float ph)
     return fm_sinf(ph * 97.0f) * 0.5f;
 }
 
+static void draw_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
+{
+    int32_t dx = x1 - x0, dy = y1 - y0;
+    int32_t n = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy);
+    int32_t i;
+    if (n <= 0) { cv_rect(x0, y0, 1, 1, c); return; }
+    for (i = 0; i <= n; i++)
+        cv_rect(x0 + dx * i / n, y0 + dy * i / n, 1, 1, c);
+}
+
+static void draw_card(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
+{
+    cv_rect(x + 2, y, w - 4, 1, c);
+    cv_rect(x + 2, y + h - 1, w - 4, 1, c);
+    cv_rect(x, y + 2, 1, h - 4, c);
+    cv_rect(x + w - 1, y + 2, 1, h - 4, c);
+    cv_rect(x + 1, y + 1, 1, 1, c);
+    cv_rect(x + w - 2, y + 1, 1, 1, c);
+    cv_rect(x + 1, y + h - 2, 1, 1, c);
+    cv_rect(x + w - 2, y + h - 2, 1, 1, c);
+}
+
 static void draw_slot_wave(int32_t x, int32_t y, int32_t w, int32_t h, int g, uint16_t c)
 {
     int32_t i;
@@ -1229,6 +1258,81 @@ static void draw_lfo_graph(int32_t x, int32_t y, int32_t w, int32_t h)
     }
 }
 
+static uint32_t mseed;
+static uint32_t mrnd(void);
+
+/* a tree grows out of the ground, then the name, then a splash line: the shrub boot, in our palette */
+static void boot_branch(int32_t x, int32_t y, float ang, float len, int depth, float grow)
+{
+    float reach = 1.6f - (float)depth * 0.28f;
+    float k = grow * reach;
+    int32_t x1, y1;
+    if (k > 1.0f) k = 1.0f;
+    if (k <= 0.0f) return;
+    x1 = x + (int32_t)(fm_cosf(ang) * len * k);
+    y1 = y + (int32_t)(fm_sinf(ang) * len * k);
+    draw_line(x, y, x1, y1, depth == 0 ? C_HI : (depth == 1 ? C_WHITE : C_GRAY));
+    if (k < 0.99f) return;
+    if (depth >= 3) {
+        cv_rect(x1 - 1, y1 - 1, 3, 3, C_HI);
+        return;
+    }
+    {
+        float a = 0.50f + 0.22f * (float)(mrnd() % 100) / 100.0f;
+        float l = len * (0.62f + 0.10f * (float)(mrnd() % 100) / 100.0f);
+        boot_branch(x1, y1, ang - a, l, depth + 1, grow);
+        boot_branch(x1, y1, ang + a, l, depth + 1, grow);
+    }
+}
+
+static void draw_boot(uint32_t dt)
+{
+    float g = (float)dt / 900.0f;
+    float w = dt > 700 ? (float)(dt - 700) / 500.0f : 0.0f;
+    int i;
+
+    if (g > 1.0f) g = 1.0f;
+    if (w > 1.0f) w = 1.0f;
+    mseed = 0x51EDu;
+
+    /* the tree, in the upper band (the canvas is shorter than the screen) */
+    cv_begin(240, 140, C_BLACK);
+    cv_rect(58, 136, 124, 1, RGB(26, 36, 48));
+    boot_branch(120, 134, -1.5708f, 40.0f, 0, g);
+    cv_blit(0, 0);
+
+    /* the name, the splash line and the dots below it */
+    cv_begin(240, 100, C_BLACK);
+    if (w > 0.0f) {
+        const char *name = "PLANT-1";
+        int32_t tw = text_w(&FONT_L, name);
+        int32_t x0 = 120 - tw / 2;
+        int32_t y0 = 4 + (int32_t)((1.0f - w) * 5.0f);
+        cv_text(x0, y0, &FONT_L, name, C_WHITE);
+        if (w > 0.5f) {
+            const char *sub = "a modular synth";
+            int32_t sw = text_w(&FONT_T, sub);
+            cv_text(120 - sw / 2, y0 + 36, &FONT_T, sub, C_GRAY);
+        }
+    }
+    if (dt > 800u) {
+        const char *splash = "grows on you";
+        int32_t sw = text_w(&FONT_B, splash);
+        int32_t x0 = 120 - sw / 2;
+        float bob = fm_sinf((float)dt * 0.012f) * 1.6f;
+        for (i = 0; splash[i]; i++) {
+            char c[2];
+            c[0] = splash[i];
+            c[1] = 0;
+            cv_text(x0 + i * 8, 66 + (int32_t)(bob + (i & 1 ? 1 : 0)), &FONT_B, c, C_AMB);
+        }
+    }
+    for (i = 0; i < 3; i++) {
+        int32_t on = (dt / 200u) > (uint32_t)i;
+        cv_rect(104 + i * 14, 88, 6, 3, on ? C_HI : RGB(26, 36, 48));
+    }
+    cv_blit(0, 140);
+}
 static void draw(void)
 {
     char t[16], v[12];
@@ -1272,7 +1376,7 @@ static void draw(void)
         gen_t *G = &P.gen[i];
         int32_t y = i * 20;
         int32_t k, lit;
-        if (i == selected) cv_rect(2, y + 1, 236, 19, C_DIM);
+        draw_card(2, y + 1, 236, 19, i == selected ? C_DIM : RGB(20, 28, 36));
         draw_slot_wave(8, y + 5, 36, 11, i, G->on ? C_HI : C_DIM);
         cv_text(50, y + 3, &FONT_XS, GEN_NAME[G->type], G->on ? (G->ftype ? C_HI : C_GRAY) : C_DIM);
         if (G->ftype) cv_text(108, y + 4, &FONT_T, FTYPE_NAME[G->ftype], C_DIM);
@@ -1285,6 +1389,7 @@ static void draw(void)
 
     /* the page */
     cv_begin(240, 94, C_BLACK);
+    draw_card(2, 1, 236, 92, RGB(20, 28, 36));
     switch (page) {
     case PAGE_GEN:
         cv_text(8, 2, &FONT_T, "LEVEL", C_GRAY);
@@ -1652,7 +1757,6 @@ void app_arp_frame(uint32_t keys, uint32_t now)
 }
 
 /* --------------------------------------------------------------- motif --- */
-static uint32_t mseed;
 
 static uint32_t mrnd(void)
 {
@@ -1896,6 +2000,20 @@ void app_frame(void)
     int i;
 
     uint32_t now = plat_ms();
+    if (booting) {
+        if (!boot_t0) boot_t0 = now;
+        if (now - boot_t0 < BOOT_MS) {
+            draw_boot(now - boot_t0);
+            if ((btns || keys) && now - boot_t0 > 250u) {
+                booting = 0;                      /* a touch skips the rest of the animation */
+            } else {
+                btn_prev = btns;
+                return;
+            }
+        } else {
+            booting = 0;
+        }
+    }
     uint32_t prev_btns = btn_prev;
     btn_prev = btns;
     if (P.seq_on) app_seq_frame(keys, now);

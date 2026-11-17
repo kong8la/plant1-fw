@@ -1,4 +1,4 @@
-wait 300
+wait 1300
 tap EDIT
 tap EDIT
 tap EDIT

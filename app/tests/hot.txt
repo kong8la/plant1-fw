@@ -1,4 +1,4 @@
-wait 300
+wait 1300
 # ACID (10)
 turn PRESET 10
 wait 30

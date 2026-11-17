@@ -1,4 +1,4 @@
-wait 300
+wait 1300
 # the MOD page: four routes, GLO toggles the selected one
 tap EDIT
 tap EDIT

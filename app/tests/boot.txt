@@ -1,0 +1,10 @@
+wait 150
+shot boot1.png
+wait 250
+shot boot2.png
+wait 300
+shot boot3.png
+wait 300
+shot boot4.png
+wait 200
+shot boot5.png

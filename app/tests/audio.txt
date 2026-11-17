@@ -1,4 +1,4 @@
-wait 300
+wait 1300
 key 7 down
 wait 200
 wav note.wav

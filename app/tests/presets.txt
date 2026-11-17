@@ -1,4 +1,4 @@
-wait 300
+wait 1300
 expect preset 0
 # six EDITs reach PATCH (GEN ENV LFO MOD FX ARP PATCH)
 tap EDIT
