@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MIT
- * PLANT-1 M3: a five-slot effect chain, FX page, and four patch slots. */
+ * PLANT-1 M4: a modulation matrix (ENV1/ENV2/LFO1/LFO2/velocity to any slot). */
 #pragma once
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "PLANT1M3"
+#define APP_NAME "PLANT1M4"
 #define APP_SPLASH_RGB RGB(56, 189, 248)
 #define APP_BLOCK 256u
 

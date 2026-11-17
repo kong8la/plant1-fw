@@ -4,22 +4,23 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M4: a modulation matrix
+
+![M4 on the screen](docs/m4.png)
+
+- **four routes**: each a source, a destination and a depth
+- **sources**: ENV1 (the amp envelope), ENV2 (a second, editable envelope), LFO1, LFO2, velocity
+- **destinations**: any of the four slots' level, cutoff or pitch (12 targets)
+- **the MOD page**: K1 route, K2 source, K3 destination, K4 depth, GLO toggles the route
+- **the ENV page** toggles AMP / MOD with the ENV button; **the LFO page** toggles LFO1 / LFO2 with LFO
+- every preset carries a matrix: PLUCK and ACID sweep their cutoff with ENV2, pads move G2's cutoff
+  with LFO2, the bell breathes, the choir trembles
+
 ## M3: an effect chain
 
-![M3 on the screen](docs/m3.png)
-
-- **five effect slots** in a fixed chain: DRIVE (tanh + tone), CHORUS (modulated delay),
-  DELAY (up to 139 ms with feedback), REVERB (4 combs + 2 allpass per channel), COMP (peak compressor)
-- **an FX page**: K1 walks the chain, K2-K4 edit A/B/C (amount, tone/feedback/depth, mix),
-  FX turns the selected slot on and off; the page shows the whole chain with its mix
-- **four patch slots** in flash: on PATCH, K1 picks a preset, K2 picks a slot (and loads it),
-  SAVE writes the current patch into that slot
-- every preset carries its own chain: bass gets drive, pads get chorus + delay + reverb,
-  ACID gets drive + delay, bells get reverb
-
-```
-SEL slot   EDIT page   K1-K4 page values   FX on/off   SAVE store   OCT+/- transpose
-```
+- five effect slots: DRIVE, CHORUS, DELAY (139 ms), REVERB (4 combs + 2 allpass per channel), COMP
+- an FX page (K1 walks the chain, K2-K4 edit A/B/C, FX toggles)
+- four patch slots in flash (PATCH page: K2 picks, SAVE stores)
 
 ## M2: presets, envelopes and an LFO
 
@@ -33,10 +34,6 @@ SEL slot   EDIT page   K1-K4 page values   FX on/off   SAVE store   OCT+/- trans
   morph), FM (ratio/index/feedback), noise (white to pink)
 - a TPT state-variable filter per slot (LP/HP/BP/notch), unison 1-3, six voices
 
-## M0: the chain, and one voice
-
-One FM voice, an ADSR, 27 keys, a screen. The tag `v0.1.0`; it proved the build and flash chain.
-
 ## Build
 
 The package is built on GitHub: `.github/workflows/firmware.yml` calls
@@ -48,8 +45,9 @@ Local host simulator (any OS, plain `cc`):
 
 ```bash
 ./build.sh --host
-app/build/host/plant1m3_host app/tests/basic.txt app/build/host
-app/build/host/plant1m3_host app/tests/fx.txt app/build/host
+app/build/host/plant1m4_host app/tests/basic.txt app/build/host
+app/build/host/plant1m4_host app/tests/mod.txt app/build/host
+app/build/host/plant1m4_host app/tests/fx.txt app/build/host
 ```
 
 The device build needs a Linux host (the toolchain is Linux x86-64 only); `build.sh` and the
@@ -61,19 +59,20 @@ Actions workflow are the two supported ways.
 2. Open <https://kong8la.com/plant1/flash/> in desktop Chrome or Edge.
 3. The page loads the current build by itself; connect the FM-1 over USB and press Install.
 
-The package identity is `FM-1_9300` for M3. The flash page checks the package's SHA-256, its
+The package identity is `FM-1_9400` for M4. The flash page checks the package's SHA-256, its
 identity and that it carries the update loader before anything is written.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `app/app.c`, `app/app.h` | the app: engine, presets, effects, panel, screen, storage |
+| `app/app.c`, `app/app.h` | the app: engine, modulation, presets, effects, panel, screen, storage |
 | `app/fm1.toml` | name, package identity, USB names, licence |
 | `app/tests/basic.txt` | keys, slots, pages, presets |
+| `app/tests/mod.txt` | the matrix and the AMP/MOD and LFO1/LFO2 switches |
 | `app/tests/fx.txt` | the FX chain and the flash slots |
 | `app/tests/leds.txt` | the light show (prints the LED masks) |
-| `app/tests/audio.txt`, `audio-fx.txt` | render to `note.wav` / `tail.wav` |
+| `app/tests/audio*.txt` | render to `note.wav` / `tail.wav` |
 | `build.sh` | fetches fm1-base at a pinned commit, runs its `tools/build.py` |
 | `test.sh` | the host simulator checks, run by CI |
 
@@ -82,8 +81,9 @@ identity and that it carries the update loader before anything is written.
 - **M0**: one FM voice, ADSR, keys, screen, the build/flash chain proven
 - **M1**: 4 generator slots, per-slot filter, unison, 6 voices, panel pages
 - **M2**: presets, envelopes with the curve, an LFO, patch storage, a screen that shows the sound
-- **M3** (this): 5-slot effects, an FX page, four flash patch slots
-- **M4**: a modulation matrix (envelopes/LFOs to any parameter), more presets, MIDI CC mapping
+- **M3**: 5-slot effects, an FX page, four flash patch slots
+- **M4** (this): a modulation matrix (ENV1/ENV2/LFO1/LFO2/velocity to any slot's level, cutoff, pitch)
+- **M5**: MIDI CC mapping, 16 presets, a sequencer/arp
 
 ## Licences
 

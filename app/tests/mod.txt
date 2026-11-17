@@ -1,0 +1,46 @@
+wait 300
+# the MOD page: four routes, GLO toggles the selected one
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 3
+expect routeon 0
+tap GLO
+wait 30
+expect routeon 1
+expect routesrc 2
+expect routedst 1
+# K2 walks the source, K3 the destination (slot * 3 + parameter)
+turn K2 1
+wait 30
+expect routesrc 3
+turn K3 1
+wait 30
+expect routedst 2
+turn K4 4
+wait 30
+turn K1 1
+wait 30
+expect routeon 0
+shot mod.png
+# the ENV page toggles AMP / MOD and keeps editing
+tap HOME
+wait 30
+tap EDIT
+wait 30
+expect page 1
+expect envsel 0
+tap ENV
+wait 30
+expect envsel 1
+shot en2.png
+# the LFO page toggles LFO1 / LFO2
+tap EDIT
+wait 30
+expect page 2
+expect lfosel 0
+tap LFO
+wait 30
+expect lfosel 1
+shot lfo2.png

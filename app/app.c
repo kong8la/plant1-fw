@@ -17,7 +17,7 @@
 enum { G_OFF, G_ANALOG, G_WT, G_FM, G_NOISE };
 enum { W_SAW, W_SQUARE, W_PULSE, W_SINE };
 enum { F_OFF, F_LP, F_HP, F_BP, F_NOTCH };
-enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_FX, PAGE_PRESET, NPAGES };
+enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_PRESET, NPAGES };
 enum { LFO_SIN, LFO_TRI, LFO_SAW, LFO_SQR };
 enum { LT_CUT, LT_TREM };
 
@@ -34,6 +34,12 @@ enum { FX_OFF, FX_DRIVE, FX_CHORUS, FX_DELAY, FX_REVERB, FX_COMP };
 
 typedef struct { uint8_t on, type; float p1, p2, p3; } fx_t;
 
+/* modulation: a source, a destination (slot * 3 + parameter) and a depth */
+#define NROUTE 4
+enum { SRC_OFF, SRC_ENV1, SRC_ENV2, SRC_LFO1, SRC_LFO2, SRC_VELO };
+enum { DST_LVL, DST_CUT, DST_PITCH };
+typedef struct { uint8_t on, src, dst; float amt; } route_t;
+
 typedef struct {
     gen_t gen[NGEN];
     uint8_t uni;
@@ -43,10 +49,14 @@ typedef struct {
     float lfo_rate, lfo_amt;
     float vol;
     fx_t fx[FX_MAX];
+    float e2a, e2d, e2s, e2r;
+    uint8_t lfo2_shape;
+    float lfo2_rate, lfo2_amt;
+    route_t route[NROUTE];
 } patch_t;
 
 static patch_t P;
-static uint8_t selected, page, preset_index, octave, fx_sel;
+static uint8_t selected, page, preset_index, octave, fx_sel, env_sel, lfo_sel, route_sel;
 
 /* the eight patches */
 #define G(on_, ty, wv, tb, ft, tn, lv, pn, cu, rs, pw, mo, ra, ix, fb, co) \
@@ -104,6 +114,32 @@ static const patch_t PRESETS[8] = {
       2, 9.0f, 0.7f, 700.0f, 2000.0f, 0.80f, 2000.0f, LFO_SIN, LT_CUT, 0.16f, 0.12f, 0.75f }
 };
 
+#define RZ {0, SRC_OFF, 0, 0.0f}
+#define RN(s_, d_, a_) {1, (s_), (d_), (a_)}
+
+static const route_t ROUTE_PRESET[8][NROUTE] = {
+    { RZ, RZ, RZ, RZ },                                                   /* INIT */
+    { RN(SRC_LFO2, 0 * 3 + DST_CUT, 0.25f), RZ, RZ, RZ },                 /* GLASS BELL */
+    { RN(SRC_ENV2, 0 * 3 + DST_CUT, 0.45f), RZ, RZ, RZ },                 /* FM BASS */
+    { RN(SRC_LFO2, 0 * 3 + DST_PITCH, 0.02f), RN(SRC_ENV2, 0 * 3 + DST_CUT, 0.20f), RZ, RZ }, /* SUPER SAW */
+    { RN(SRC_LFO2, 1 * 3 + DST_CUT, 0.30f), RN(SRC_ENV2, 0 * 3 + DST_LVL, 0.30f), RZ, RZ },   /* PHASE PAD */
+    { RN(SRC_ENV2, 0 * 3 + DST_CUT, 0.60f), RZ, RZ, RZ },                 /* PLUCK */
+    { RN(SRC_ENV2, 0 * 3 + DST_CUT, 0.70f), RZ, RZ, RZ },                 /* ACID */
+    { RN(SRC_LFO1, 0 * 3 + DST_LVL, 0.20f), RZ, RZ, RZ }                  /* DARK CHOIR */
+};
+
+/* the mod envelope: attack, decay, sustain, release */
+static const float E2_PRESET[8][4] = {
+    { 4.0f, 300.0f, 0.50f, 300.0f },
+    { 8.0f, 600.0f, 0.30f, 600.0f },
+    { 2.0f, 200.0f, 0.40f, 200.0f },
+    { 20.0f, 800.0f, 0.60f, 800.0f },
+    { 400.0f, 1500.0f, 0.70f, 1500.0f },
+    { 1.0f, 300.0f, 0.00f, 300.0f },
+    { 1.0f, 150.0f, 0.10f, 150.0f },
+    { 600.0f, 1200.0f, 0.60f, 1200.0f }
+};
+
 static const char *const PRESET_NAME[8] = {"INIT", "GLASS BELL", "FM BASS", "SUPER SAW", "PHASE PAD", "PLUCK", "ACID", "DARK CHOIR"};
 
 #define FXZ {0, FX_OFF, 0.0f, 0.0f, 0.0f}
@@ -127,6 +163,12 @@ static void preset_load(uint8_t i)
     int k;
     P = PRESETS[i];
     for (k = 0; k < FX_MAX; k++) P.fx[k] = FX_PRESET[i][k];
+    for (k = 0; k < NROUTE; k++) P.route[k] = ROUTE_PRESET[i][k];
+    P.e2a = E2_PRESET[i][0]; P.e2d = E2_PRESET[i][1];
+    P.e2s = E2_PRESET[i][2]; P.e2r = E2_PRESET[i][3];
+    P.lfo2_shape = P.lfo_shape;
+    P.lfo2_rate = 0.22f;
+    P.lfo2_amt = 0.35f;
     preset_index = i;
 }
 
@@ -355,7 +397,7 @@ typedef struct {
     float mphase[NGEN];
     float fbprev[NGEN];
     float pink[NGEN];
-    float env, lfo_ph, lfo_val;
+    float env, env2, lfo_ph, lfo2_ph, lfo_val, lfo2_val, mod[NGEN * 3];
     svf_t filt[NGEN];
 } voice_t;
 
@@ -402,6 +444,33 @@ static float env_tick(voice_t *v)
     return v->env;
 }
 
+static float env2_tick(voice_t *v)
+{
+    static uint8_t st;
+    switch (v->env2 < 0.0f ? 0 : st) {
+    default:
+        if (v->stage == 0) { st = 0; v->env2 = 0.0f; return 0.0f; }
+        st = 1;
+        /* fall through */
+    case 1:
+        v->env2 += (1.0f - v->env2) * ENV_K(P.e2a);
+        if (v->env2 >= 0.999f) { v->env2 = 1.0f; st = 2; }
+        break;
+    case 2:
+        v->env2 += (P.e2s - v->env2) * ENV_K(P.e2d);
+        if (v->env2 <= P.e2s + 0.001f) { v->env2 = P.e2s; st = 3; }
+        break;
+    case 3:
+        v->env2 = P.e2s;
+        break;
+    case 4:
+        v->env2 += (0.0f - v->env2) * ENV_K(P.e2r);
+        if (v->env2 < 0.0005f) { v->env2 = 0.0f; st = 0; }
+        break;
+    }
+    return v->env2;
+}
+
 static float lfo_shape(uint8_t s, float ph)
 {
     switch (s & 3) {
@@ -414,7 +483,7 @@ static float lfo_shape(uint8_t s, float ph)
 
 static void voice_start(voice_t *v, uint8_t note, float vel)
 {
-    int g, u;
+    int g, u, i;
     v->active = 1;
     v->note = note;
     v->vel = vel;
@@ -423,7 +492,11 @@ static void voice_start(voice_t *v, uint8_t note, float vel)
     v->env = 0.0f;
     v->stage = 1;
     v->lfo_ph = 0.0f;
+    v->lfo2_ph = 0.0f;
     v->lfo_val = 0.0f;
+    v->lfo2_val = 0.0f;
+    v->env2 = 0.0f;
+    for (i = 0; i < NGEN * 3; i++) v->mod[i] = 0.0f;
     v->age = ++note_counter;
     for (g = 0; g < NGEN; g++) {
         for (u = 0; u < UNI_MAX; u++)
@@ -446,7 +519,7 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
         float sumL = 0.0f, sumR = 0.0f;
         float freq;
         if (!G->on || G->type == G_OFF || G->level <= 0.0f) continue;
-        freq = base * fm_exp2f((float)G->tune * (1.0f / 12.0f));
+        freq = base * fm_exp2f(((float)G->tune + v->mod[g * 3 + DST_PITCH] * 24.0f) * (1.0f / 12.0f));
         for (u = 0; u < P.uni; u++) {
             float sp = P.uni == 1 ? 0.0f : ((float)u / (float)(P.uni - 1) * 2.0f - 1.0f);
             float fu = freq * fm_exp2f(sp * P.detune * (1.0f / 1200.0f));
@@ -504,8 +577,11 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
             sumL += f - mono;
             sumR += f - mono;
         }
-        mixL += sumL * G->level;
-        mixR += sumR * G->level;
+        {
+            float lvl = G->level * fm_clampf(1.0f + v->mod[g * 3 + DST_LVL], 0.0f, 2.0f);
+            mixL += sumL * lvl;
+            mixR += sumR * lvl;
+        }
     }
     *outL = mixL;
     *outR = mixR;
@@ -523,15 +599,31 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
     for (v = 0; v < NV; v++) {
         voice_t *vv = &V[v];
         if (!vv->active) continue;
+        int r;
+        float src[6];
         vv->lfo_ph += ldt * P.lfo_rate;
         if (vv->lfo_ph >= 1.0f) vv->lfo_ph -= (float)(int)vv->lfo_ph;
+        vv->lfo2_ph += ldt * P.lfo2_rate;
+        if (vv->lfo2_ph >= 1.0f) vv->lfo2_ph -= (float)(int)vv->lfo2_ph;
         vv->lfo_val = lfo_shape(P.lfo_shape, vv->lfo_ph) * P.lfo_amt;
+        vv->lfo2_val = lfo_shape(P.lfo2_shape, vv->lfo2_ph) * P.lfo2_amt;
+        src[SRC_OFF] = 0.0f;
+        src[SRC_ENV1] = vv->env;
+        src[SRC_ENV2] = vv->env2;
+        src[SRC_LFO1] = vv->lfo_val;
+        src[SRC_LFO2] = vv->lfo2_val;
+        src[SRC_VELO] = vv->vel;
+        for (g = 0; g < NGEN * 3; g++) vv->mod[g] = 0.0f;
+        for (r = 0; r < NROUTE; r++)
+            if (P.route[r].on && P.route[r].dst < NGEN * 3)
+                vv->mod[P.route[r].dst] += src[P.route[r].src & 7] * P.route[r].amt;
         for (g = 0; g < NGEN; g++) {
             gen_t *G = &P.gen[g];
             float cut = G->cut;
             if (!G->ftype) continue;
             if (P.lfo_tgt == LT_CUT)
                 cut = fm_clampf(cut * fm_exp2f(vv->lfo_val * 3.0f), 20.0f, 18000.0f);
+            cut = fm_clampf(cut * fm_exp2f(vv->mod[g * 3 + DST_CUT] * 4.0f), 20.0f, 18000.0f);
             vv->filt[g].mode = G->ftype;
             svf_set(&vv->filt[g], cut, G->res);
         }
@@ -545,6 +637,7 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
             if (!vv->active) continue;
             if (vv->freq != vv->target) vv->freq += (vv->target - vv->freq) * 0.0015f;
             e = env_tick(vv);
+            (void)env2_tick(vv);
             if (vv->stage == 0) { vv->active = 0; continue; }
             if (P.lfo_tgt == LT_TREM) trem = 1.0f + vv->lfo_val * 0.5f;
             voice_sample(vv, &sl, &sr);
@@ -570,7 +663,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 3;
+    bank.ver = 4;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -582,7 +675,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 3 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 4 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -603,9 +696,11 @@ static void slot_pick(int d)
 /* ------------------------------------------------------------------- UI --- */
 static const char *const GEN_NAME[5] = {"OFF", "ANALOG", "WAVETABLE", "FM", "NOISE"};
 static const char *const FTYPE_NAME[5] = {"OFF", "LP", "HP", "BP", "NOTCH"};
-static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "FX", "PATCH"};
+static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "PATCH"};
 static const char *const FX_NAME[6] = {"OFF", "DRIVE", "CHORUS", "DELAY", "REVERB", "COMP"};
 static const char *const LFO_NAME[4] = {"SIN", "TRI", "SAW", "SQR"};
+static const char *const SRC_NAME[6] = {"--", "ENV1", "ENV2", "LFO1", "LFO2", "VELO"};
+static const char *const DST_NAME[3] = {"LVL", "CUT", "PIT"};
 
 static void note_text(char *out, int32_t m)
 {
@@ -680,15 +775,15 @@ static void draw_slot_wave(int32_t x, int32_t y, int32_t w, int32_t h, int g, ui
     }
 }
 
-static void draw_env_graph(int32_t x, int32_t y, int32_t w, int32_t h)
+static void draw_env_graph(int32_t x, int32_t y, int32_t w, int32_t h, float a, float d, float s, float r)
 {
-    float a = P.a_ms, d = P.d_ms, r = P.r_ms, s = P.s;
     float total = a + d + r + 120.0f;
     int32_t xa = x + (int32_t)((float)w * a / total);
     int32_t xd = xa + (int32_t)((float)w * d / total);
     int32_t xs = xd + (int32_t)((float)w * 0.18f);
     int32_t xr = x + w - 2;
     int32_t i;
+    if (a < 1.0f) a = 1.0f;
     cv_rect(x, y, w, 1, C_LINE);
     cv_rect(x, y, 1, h, C_LINE);
     for (i = x; i <= xa; i++)
@@ -742,7 +837,7 @@ static void draw(void)
         draw_slot_wave(8, y + 6, 42, 12, i, G->on ? C_HI : C_DIM);
         cv_text(56, y + 3, &FONT_XS, GEN_NAME[G->type], G->on ? C_HI : C_DIM);
         if (G->ftype) cv_text(116, y + 5, &FONT_T, FTYPE_NAME[G->ftype], C_GRAY);
-        cv_rect(152, y + 11, 66, 4, C_LINE);
+        cv_rect(152, y + 11, 66, 4, RGB(26, 36, 48));
         cv_rect(152, y + 11, (int32_t)(G->level * 66.0f), 4, G->on ? C_HI : C_DIM);
     }
     cv_blit(0, 30);
@@ -770,34 +865,59 @@ static void draw(void)
         cv_text(96, 64, &FONT_T, "OCT", C_DIM);
         cv_text(126, 64, &FONT_T, v, C_GRAY);
         break;
-    case PAGE_ENV:
-        draw_env_graph(8, 2, 224, 42);
-        cv_text(8, 48, &FONT_T, "A", C_GRAY);
-        num_text(v, (int32_t)P.a_ms);
-        cv_text(20, 48, &FONT_T, v, C_HI);
-        cv_text(62, 48, &FONT_T, "D", C_GRAY);
-        num_text(v, (int32_t)P.d_ms);
-        cv_text(74, 48, &FONT_T, v, C_HI);
-        cv_text(118, 48, &FONT_T, "S", C_GRAY);
-        num_text(v, (int32_t)(P.s * 100.0f));
-        cv_text(130, 48, &FONT_T, v, C_HI);
-        cv_text(176, 48, &FONT_T, "R", C_GRAY);
-        num_text(v, (int32_t)P.r_ms);
-        cv_text(188, 48, &FONT_T, v, C_HI);
-        cv_text(8, 64, &FONT_T, "K1 A   K2 D   K3 S   K4 R", C_DIM);
+    case PAGE_ENV: {
+        float ea = env_sel ? P.e2a : P.a_ms, ed = env_sel ? P.e2d : P.d_ms;
+        float es = env_sel ? P.e2s : P.s, er = env_sel ? P.e2r : P.r_ms;
+        draw_env_graph(8, 2, 224, 42, ea, ed, es, er);
+        cv_text(8, 48, &FONT_T, env_sel ? "MOD ENV" : "AMP ENV", C_WHITE);
+        cv_text(8, 62, &FONT_T, "A", C_GRAY);
+        num_text(v, (int32_t)ea);
+        cv_text(20, 62, &FONT_T, v, C_HI);
+        cv_text(62, 62, &FONT_T, "D", C_GRAY);
+        num_text(v, (int32_t)ed);
+        cv_text(74, 62, &FONT_T, v, C_HI);
+        cv_text(118, 62, &FONT_T, "S", C_GRAY);
+        num_text(v, (int32_t)(es * 100.0f));
+        cv_text(130, 62, &FONT_T, v, C_HI);
+        cv_text(176, 62, &FONT_T, "R", C_GRAY);
+        num_text(v, (int32_t)er);
+        cv_text(188, 62, &FONT_T, v, C_HI);
+        cv_text(8, 78, &FONT_T, "ENV=AMP/MOD  K1-K4 A D S R", C_DIM);
         break;
+    }
     case PAGE_LFO:
         draw_lfo_graph(8, 2, 224, 34);
-        cv_text(8, 40, &FONT_S, LFO_NAME[P.lfo_shape & 3], C_HI);
+        cv_text(8, 40, &FONT_S, LFO_NAME[(lfo_sel ? P.lfo2_shape : P.lfo_shape) & 3], C_HI);
         cv_text(62, 42, &FONT_T, "RATE", C_GRAY);
-        hz_text(v, P.lfo_rate);
+        hz_text(v, lfo_sel ? P.lfo2_rate : P.lfo_rate);
         cv_text(100, 40, &FONT_S, v, C_HI);
         cv_text(150, 42, &FONT_T, "AMT", C_GRAY);
-        num_text(v, (int32_t)(P.lfo_amt * 100.0f));
+        num_text(v, (int32_t)((lfo_sel ? P.lfo2_amt : P.lfo_amt) * 100.0f));
         cv_text(186, 40, &FONT_S, v, C_HI);
-        cv_text(8, 62, &FONT_T, P.lfo_tgt == LT_CUT ? "TARGET CUTOFF" : "TARGET TREMOLO", C_GRAY);
-        cv_text(8, 76, &FONT_T, "K1 SHAPE K2 RATE K3 AMT K4 TGT", C_DIM);
+        cv_text(8, 60, &FONT_T, lfo_sel ? "LFO2 -> MOD MATRIX" : "LFO1 -> CUTOFF/TREM", C_GRAY);
+        cv_text(8, 76, &FONT_T, "LFO=LFO1/2  K1 SHAPE K2 RATE K3 AMT", C_DIM);
         break;
+    case PAGE_MOD: {
+        int32_t y;
+        int r;
+        for (r = 0; r < NROUTE; r++) {
+            route_t *R = &P.route[r];
+            y = r * 14;
+            if (r == route_sel) cv_rect(2, y, 236, 13, C_LINE);
+            cv_text(6, y + 1, &FONT_T, SRC_NAME[R->src], R->on ? C_HI : C_DIM);
+            cv_text(52, y + 1, &FONT_T, ">", C_DIM);
+            num_text(v, R->dst / 3 + 1);
+            cv_text(64, y + 1, &FONT_T, "G", C_GRAY);
+            cv_text(74, y + 1, &FONT_T, v, R->on ? C_HI : C_DIM);
+            cv_text(86, y + 1, &FONT_T, DST_NAME[R->dst % 3], R->on ? C_HI : C_DIM);
+            cv_rect(140, y + 5, 80, 3, RGB(26, 36, 48));
+            if (R->on)
+                cv_rect(140, y + 5, (int32_t)(fm_clampf(fm_fabsf(R->amt), 0.0f, 1.0f) * 80.0f), 3, C_GRAY);
+        }
+        cv_text(8, 60, &FONT_T, "K1 ROUTE K2 SRC K3 DST K4 DEPTH", C_DIM);
+        cv_text(8, 74, &FONT_T, "GLO=toggle route", C_DIM);
+        break;
+    }
     case PAGE_FX:
         for (i = 0; i < FX_MAX; i++) {
             fx_t *F = &P.fx[i];
@@ -839,9 +959,9 @@ static void draw(void)
     /* page tabs */
     cv_begin(240, 18, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
-        int32_t x = 6 + i * 47;
+        int32_t x = 2 + i * 40;
         if (i == page) {
-            cv_rect(x - 3, 2, 44, 14, C_LINE);
+            cv_rect(x - 1, 2, 38, 14, C_LINE);
             cv_text(x, 4, &FONT_T, PAGE_NAME[i], C_HI);
         } else {
             cv_text(x, 4, &FONT_T, PAGE_NAME[i], C_DIM);
@@ -884,7 +1004,7 @@ static void key_edges(uint32_t keys)
 static float key_glow[NKEYS];
 static uint32_t anim_t0, anim_kind;
 
-static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_FX, B_SAVE};
+static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_SAVE};
 
 static void anim_start(uint8_t kind, uint32_t now)
 {
@@ -950,56 +1070,127 @@ void app_frame(void)
     if (pressed & (1u << B_OCTUP)) { if (octave < 2) octave++; }
     if (pressed & (1u << B_OCTDN)) { if (octave > -2) octave--; }
     if (pressed & (1u << B_SAVE)) { patch_save(); anim_start(ANIM_SWEEP, now); }
-    if (pressed & (1u << B_FX) && page == PAGE_FX) {
+    if ((pressed & (1u << B_ENV)) && page == PAGE_ENV) env_sel = (uint8_t)!env_sel;
+    if ((pressed & (1u << B_LFO)) && page == PAGE_LFO) lfo_sel = (uint8_t)!lfo_sel;
+    if ((pressed & (1u << B_FX)) && page == PAGE_FX) {
         fx_t *F = &P.fx[fx_sel];
         F->on = (uint8_t)!F->on;
         if (F->on && F->type == FX_OFF) F->type = FX_DRIVE;
     }
+    if ((pressed & (1u << B_GLO)) && page == PAGE_MOD) {
+        route_t *R = &P.route[route_sel];
+        R->on = (uint8_t)!R->on;
+        if (R->on && R->src == SRC_OFF) { R->src = SRC_ENV2; R->dst = DST_CUT; R->amt = 0.30f; }
+    }
 
     d = plat_enc(EN_K1);
     if (d) {
-        if (page == PAGE_FX) {
-            fx_sel = (uint8_t)((fx_sel + (d > 0 ? 1 : FX_MAX - 1)) % FX_MAX);
-        } else if (page == PAGE_GEN) {
+        switch (page) {
+        case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
             G->type = (uint8_t)(((G->type - 1 + (d > 0 ? 1 : 3)) % 4) + 1);
             G->on = 1;
             G->ftype = G->ftype ? G->ftype : F_LP;
-        } else if (page == PAGE_ENV) {
-            P.a_ms = fm_clampf(P.a_ms * fm_exp2f((float)d * 0.35f), 0.5f, 4000.0f);
-        } else if (page == PAGE_LFO) {
-            P.lfo_shape = (uint8_t)((P.lfo_shape + (d > 0 ? 1 : 3)) & 3);
-        } else {
+            break;
+        }
+        case PAGE_ENV:
+            if (env_sel) P.e2a = fm_clampf(P.e2a * fm_exp2f((float)d * 0.35f), 0.5f, 4000.0f);
+            else P.a_ms = fm_clampf(P.a_ms * fm_exp2f((float)d * 0.35f), 0.5f, 4000.0f);
+            break;
+        case PAGE_LFO:
+            if (lfo_sel) P.lfo2_shape = (uint8_t)((P.lfo2_shape + (d > 0 ? 1 : 3)) & 3);
+            else P.lfo_shape = (uint8_t)((P.lfo_shape + (d > 0 ? 1 : 3)) & 3);
+            break;
+        case PAGE_MOD:
+            route_sel = (uint8_t)((route_sel + (d > 0 ? 1 : NROUTE - 1)) % NROUTE);
+            break;
+        case PAGE_FX:
+            fx_sel = (uint8_t)((fx_sel + (d > 0 ? 1 : FX_MAX - 1)) % FX_MAX);
+            break;
+        default:
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 7)) & 7));
             anim_start(ANIM_SWEEP, now);
+            break;
         }
     }
     d = plat_enc(EN_K2);
     if (d) {
-        if (page == PAGE_FX) {
+        switch (page) {
+        case PAGE_GEN:
+            P.gen[selected].level = fm_clampf(P.gen[selected].level + (float)d * 0.02f, 0.0f, 1.0f);
+            break;
+        case PAGE_ENV:
+            if (env_sel) P.e2d = fm_clampf(P.e2d * fm_exp2f((float)d * 0.35f), 5.0f, 4000.0f);
+            else P.d_ms = fm_clampf(P.d_ms * fm_exp2f((float)d * 0.35f), 5.0f, 4000.0f);
+            break;
+        case PAGE_LFO:
+            if (lfo_sel) P.lfo2_rate = fm_clampf(P.lfo2_rate * fm_exp2f((float)d * 0.35f), 0.05f, 10.0f);
+            else P.lfo_rate = fm_clampf(P.lfo_rate * fm_exp2f((float)d * 0.35f), 0.05f, 10.0f);
+            break;
+        case PAGE_MOD: {
+            route_t *R = &P.route[route_sel];
+            R->src = (uint8_t)((R->src + (d > 0 ? 1 : 5)) % 6);
+            if (R->src && !R->on) { R->on = 1; R->amt = 0.30f; }
+            break;
+        }
+        case PAGE_FX: {
             fx_t *F = &P.fx[fx_sel];
             if (!F->on) { F->on = 1; if (F->type == FX_OFF) F->type = FX_DRIVE; }
             F->p1 = fm_clampf(F->p1 + (float)d * 0.02f, 0.0f, 1.0f);
-        } else if (page == PAGE_PRESET) slot_pick(d > 0 ? 1 : -1);
-        else if (page == PAGE_GEN) P.gen[selected].level = fm_clampf(P.gen[selected].level + (float)d * 0.02f, 0.0f, 1.0f);
-        else if (page == PAGE_ENV) P.d_ms = fm_clampf(P.d_ms * fm_exp2f((float)d * 0.35f), 5.0f, 4000.0f);
-        else if (page == PAGE_LFO) P.lfo_rate = fm_clampf(P.lfo_rate * fm_exp2f((float)d * 0.35f), 0.05f, 10.0f);
+            break;
+        }
+        default:
+            slot_pick(d > 0 ? 1 : -1);
+            break;
+        }
     }
     d = plat_enc(EN_K3);
     if (d) {
-        if (page == PAGE_FX) {
+        switch (page) {
+        case PAGE_GEN:
+            P.gen[selected].pan = fm_clampf(P.gen[selected].pan + (float)d * 0.05f, -1.0f, 1.0f);
+            break;
+        case PAGE_ENV:
+            if (env_sel) P.e2s = fm_clampf(P.e2s + (float)d * 0.03f, 0.0f, 1.0f);
+            else P.s = fm_clampf(P.s + (float)d * 0.03f, 0.0f, 1.0f);
+            break;
+        case PAGE_LFO:
+            if (lfo_sel) P.lfo2_amt = fm_clampf(P.lfo2_amt + (float)d * 0.05f, 0.0f, 1.0f);
+            else P.lfo_amt = fm_clampf(P.lfo_amt + (float)d * 0.05f, 0.0f, 1.0f);
+            break;
+        case PAGE_MOD: {
+            route_t *R = &P.route[route_sel];
+            R->dst = (uint8_t)((R->dst + (d > 0 ? 1 : NGEN * 3 - 1)) % (NGEN * 3));
+            break;
+        }
+        case PAGE_FX:
             P.fx[fx_sel].p2 = fm_clampf(P.fx[fx_sel].p2 + (float)d * 0.02f, 0.0f, 1.0f);
-        } else if (page == PAGE_GEN) P.gen[selected].pan = fm_clampf(P.gen[selected].pan + (float)d * 0.05f, -1.0f, 1.0f);
-        else if (page == PAGE_ENV) P.s = fm_clampf(P.s + (float)d * 0.03f, 0.0f, 1.0f);
-        else if (page == PAGE_LFO) P.lfo_amt = fm_clampf(P.lfo_amt + (float)d * 0.05f, 0.0f, 1.0f);
+            break;
+        }
     }
     d = plat_enc(EN_K4);
     if (d) {
-        if (page == PAGE_FX) {
+        switch (page) {
+        case PAGE_GEN:
+            P.gen[selected].tune = (int8_t)clamp((int32_t)P.gen[selected].tune + (d > 0 ? 1 : -1), -24, 24);
+            break;
+        case PAGE_ENV:
+            if (env_sel) P.e2r = fm_clampf(P.e2r * fm_exp2f((float)d * 0.35f), 5.0f, 6000.0f);
+            else P.r_ms = fm_clampf(P.r_ms * fm_exp2f((float)d * 0.35f), 5.0f, 6000.0f);
+            break;
+        case PAGE_LFO:
+            if (!lfo_sel) P.lfo_tgt = (uint8_t)(P.lfo_tgt ? 0 : 1);
+            break;
+        case PAGE_MOD: {
+            route_t *R = &P.route[route_sel];
+            R->amt = fm_clampf(R->amt + (float)d * 0.05f, -1.0f, 1.0f);
+            R->on = (uint8_t)(R->amt != 0.0f);
+            break;
+        }
+        case PAGE_FX:
             P.fx[fx_sel].p3 = fm_clampf(P.fx[fx_sel].p3 + (float)d * 0.02f, 0.0f, 1.0f);
-        } else if (page == PAGE_GEN) P.gen[selected].tune = (int8_t)clamp((int32_t)P.gen[selected].tune + (d > 0 ? 1 : -1), -24, 24);
-        else if (page == PAGE_ENV) P.r_ms = fm_clampf(P.r_ms * fm_exp2f((float)d * 0.35f), 5.0f, 6000.0f);
-        else if (page == PAGE_LFO) P.lfo_tgt = (uint8_t)(P.lfo_tgt ? 0 : 1);
+            break;
+        }
     }
 
     lights_frame(keys, pressed, now);
@@ -1057,6 +1248,11 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "fxtype")) { *got = P.fx[fx_sel].type; return 1; }
     if (!strcmp(what, "fxsel")) { *got = fx_sel; return 1; }
     if (!strcmp(what, "slot")) { *got = slot_index; return 1; }
+    if (!strcmp(what, "routeon")) { *got = P.route[route_sel].on; return 1; }
+    if (!strcmp(what, "routesrc")) { *got = P.route[route_sel].src; return 1; }
+    if (!strcmp(what, "routedst")) { *got = P.route[route_sel].dst; return 1; }
+    if (!strcmp(what, "envsel")) { *got = env_sel; return 1; }
+    if (!strcmp(what, "lfosel")) { *got = lfo_sel; return 1; }
     return 0;
 }
 #endif
