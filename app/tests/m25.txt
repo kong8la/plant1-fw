@@ -1,0 +1,36 @@
+wait 1300
+# the first screen is the tree, not text
+shot splash.png
+# SEL is the motif key now: tap rolls a new idea and jumps to MOTIF
+tap SEL
+wait 40
+expect page 7
+expect mmode 0
+shot sel-motif.png
+# the FX chain has three lanes and a routing switch
+tap FX
+wait 30
+expect page 4
+expect fxmode 0
+tap REC
+wait 30
+expect fxmode 1
+shot fx-par.png
+tap REC
+wait 30
+expect fxmode 0
+# hold EDIT on GEN cycles PARAMS -> CROSS FM -> LANE
+tap HOME
+wait 30
+expect page 0
+expect genmode 0
+press EDIT
+wait 800
+release EDIT
+wait 40
+expect genmode 1
+press EDIT
+wait 800
+release EDIT
+wait 40
+expect genmode 2

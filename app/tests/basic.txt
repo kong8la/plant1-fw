@@ -7,10 +7,12 @@ expect voices 1
 key 7 up
 wait 400
 expect note -1
-# SEL walks the four slots
-tap SEL
+# the ALGO encoder walks the four slots
+turn ALGO 1
 wait 30
 expect sel 1
+tap HOME
+wait 30
 # EDIT walks GEN -> ENV -> LFO -> MOD -> FX -> ARP -> SEQ -> MOTIF -> MACRO -> PATCH
 tap EDIT
 wait 30

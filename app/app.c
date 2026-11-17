@@ -73,6 +73,8 @@ typedef struct {
     uint8_t chord;
     uint8_t seq_len, swing, key, evolve;
     float macro[4];
+    uint8_t fx_mode;                     /* 0 serial A>B>C, 1 parallel (A and B) > C */
+    float fx_bal;
 } patch_t;
 
 static patch_t P;
@@ -450,6 +452,7 @@ static void preset_load(uint8_t i)
     P.chord = 0;
     P.seq_len = 16; P.swing = 0; P.key = 0; P.evolve = 0;
     P.macro[0] = P.macro[1] = P.macro[2] = P.macro[3] = 0.0f;
+    P.fx_mode = 0; P.fx_bal = 0.5f;
     {
         static const int8_t seed[16] = {0, 3, 7, 10, 12, 10, 7, 3, 0, 7, 12, 15, 12, 7, 3, 0};
         for (k = 0; k < 16; k++) {
@@ -680,12 +683,11 @@ static float fx_comp(float x, fx_t *F)
     return x;
 }
 
-static void fx_run(float *L, float *R)
+static void fx_run_one(int i, float *L, float *R)
 {
-    int i;
-    for (i = 0; i < FX_MAX; i++) {
+    {
         fx_t *F = &P.fx[i];
-        if (!F->on || F->type == FX_OFF) continue;
+        if (!F->on || F->type == FX_OFF) return;
         switch (F->type) {
         case FX_DRIVE:
             *L = fx_drive(*L, F);
@@ -711,6 +713,25 @@ static void fx_run(float *L, float *R)
             break;
         }
     }
+}
+
+static void fx_run(float *L, float *R)
+{
+    float l0 = *L, r0 = *R;
+    int i;
+    fx_run_one(0, L, R);
+    fx_run_one(1, L, R);
+    if (P.fx_mode == 0) {
+        fx_run_one(2, L, R);
+        fx_run_one(3, L, R);
+    } else {
+        float bl = l0, br = r0;
+        fx_run_one(2, &bl, &br);
+        fx_run_one(3, &bl, &br);
+        *L = *L * (1.0f - P.fx_bal) + bl * P.fx_bal;
+        *R = *R * (1.0f - P.fx_bal) + br * P.fx_bal;
+    }
+    fx_run_one(4, L, R);
     dly_i++;
     cho_i++;
     cho_ph += cho_inc;
@@ -1074,7 +1095,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 11;
+    bank.ver = 12;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -1086,7 +1107,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 11 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 12 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -1624,8 +1645,9 @@ static void draw(void)
             draw_card(2, y, 236, 19, i == fx_sel ? C_HI : RGB(22, 31, 40));
             num_text(v, i + 1);
             cv_text(7, y + 5, &FONT_T, v, C_DIM);
-            cv_text(20, y + 4, &FONT_S, FX_NAME[F->type], F->on ? C_HI : C_DIM);
-            cv_text(120, y + 5, &FONT_T, F->on ? "ON" : "--", F->on ? C_HI : C_DIM);
+            cv_text(20, y + 6, &FONT_T, i < 2 ? "A" : i < 4 ? "B" : "C", C_AMB);
+            cv_text(32, y + 4, &FONT_S, FX_NAME[F->type], F->on ? C_HI : C_DIM);
+            cv_text(126, y + 5, &FONT_T, F->on ? "ON" : "--", F->on ? C_HI : C_DIM);
             cv_rect(150, y + 8, 80, 4, RGB(22, 31, 40));
             if (F->on) cv_rect(150, y + 8, (int32_t)(fm_clampf(F->p3, 0.0f, 1.0f) * 80.0f), 4, C_GRAY);
         }
@@ -1638,6 +1660,7 @@ static void draw(void)
             cv_text(80, 126, &FONT_T, "B", C_GRAY); cv_text(94, 124, &FONT_S, v, C_HI);
             num_text(v, (int32_t)(F->p3 * 100.0f));
             cv_text(150, 126, &FONT_T, "C", C_GRAY); cv_text(164, 124, &FONT_S, v, C_HI);
+            cv_text(8, 1, &FONT_T, P.fx_mode ? "PAR A+B>C" : "SER A>B>C", P.fx_mode ? C_HI : C_GRAY);
         }
         break;
     case PAGE_ARP:
@@ -1868,6 +1891,9 @@ static void draw(void)
         } else if (osd_kind == 14) {
             cv_text(8, 7, &FONT_T, "SEQ", C_HI);
             cv_text(36, 7, &FONT_T, seq_mode == 0 ? "STEP" : seq_mode == 1 ? "SHAPE" : "GROOVE", C_WHITE);
+        } else if (osd_kind == 15) {
+            cv_text(8, 7, &FONT_T, "FX ROUTING", C_HI);
+            cv_text(120, 7, &FONT_T, P.fx_mode ? "PARALLEL" : "SERIAL", C_WHITE);
         } else if (osd_kind >= 6) {
             int k = osd_kind - 6;
             cv_text(8, 7, &FONT_T, "K", C_HI);
@@ -2311,6 +2337,13 @@ void app_frame(void)
                     }
                     break;
                 case B_SEL:
+                    P.seed = (uint16_t)((P.seed + 1) % 10000);
+                    motif_generate();
+                    page = PAGE_MOTIF;
+                    osd_kind = 10; osd_until = now + 900u;
+                    anim_start(ANIM_SWEEP, now);
+                    break;
+                case B_EDIT:
                     if (page == PAGE_GEN) {
                         gen_mode = (uint8_t)((gen_mode + 1) % 3);
                         osd_kind = 13; osd_until = now + 900u;
@@ -2350,8 +2383,10 @@ void app_frame(void)
                     anim_start(ANIM_BLINK, now);
                     break;
                 case B_SEL:
-                    selected = (uint8_t)((selected + 1) % NGEN);
-                    osd_kind = 2; osd_until = now + 900u;
+                    motif_generate();                /* a new idea, same style */
+                    page = PAGE_MOTIF;
+                    osd_kind = 10; osd_until = now + 900u;
+                    anim_start(ANIM_SWEEP, now);
                     break;
                 case B_EDIT:
                     page = (uint8_t)((page + 1) % NPAGES);
@@ -2408,6 +2443,11 @@ void app_frame(void)
                     if (page == PAGE_MOTIF) {
                         P.motif_mode = (uint8_t)((P.motif_mode + 1) % 2);
                         osd_kind = 10; osd_until = now + 900u;
+                        break;
+                    }
+                    if (page == PAGE_FX) {
+                        P.fx_mode = (uint8_t)!P.fx_mode;
+                        osd_kind = 15; osd_until = now + 900u;
                         break;
                     }
                     if (page == PAGE_SEQ) {
@@ -2776,6 +2816,7 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "macro1")) { *got = (int32_t)(P.macro[0] * 100.0f); return 1; }
     if (!strcmp(what, "macro4")) { *got = (int32_t)(P.macro[3] * 100.0f); return 1; }
     if (!strcmp(what, "macsel")) { *got = macro_sel; return 1; }
+    if (!strcmp(what, "fxmode")) { *got = P.fx_mode; return 1; }
     if (!strcmp(what, "lanefx")) { *got = P.gen[selected].lane_fx; return 1; }
     if (!strcmp(what, "laneamt")) { *got = (int32_t)(P.gen[selected].lane_amt * 100.0f); return 1; }
     if (!strcmp(what, "genmode")) { *got = gen_mode; return 1; }

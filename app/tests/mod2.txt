@@ -34,9 +34,9 @@ shot macro.png
 tap HOME
 wait 30
 expect page 0
-press SEL
+press EDIT
 wait 800
-release SEL
+release EDIT
 wait 40
 turn K1 1
 wait 30
