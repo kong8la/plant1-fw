@@ -22,8 +22,9 @@ shot fx.png
 # the PATCH page: K2 walks the four flash slots
 tap EDIT
 tap EDIT
+tap EDIT
 wait 30
-expect page 6
+expect page 7
 turn K2 1
 wait 30
 expect slot 1

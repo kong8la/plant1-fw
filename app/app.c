@@ -17,7 +17,7 @@
 enum { G_OFF, G_ANALOG, G_WT, G_FM, G_NOISE };
 enum { W_SAW, W_SQUARE, W_PULSE, W_SINE };
 enum { F_OFF, F_LP, F_HP, F_BP, F_NOTCH };
-enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_PRESET, NPAGES };
+enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_SEQ, PAGE_PRESET, NPAGES };
 enum { LFO_SIN, LFO_TRI, LFO_SAW, LFO_SQR };
 enum { LT_CUT, LT_TREM };
 
@@ -40,6 +40,9 @@ enum { SRC_OFF, SRC_ENV1, SRC_ENV2, SRC_LFO1, SRC_LFO2, SRC_VELO };
 enum { DST_LVL, DST_CUT, DST_PITCH };
 typedef struct { uint8_t on, src, dst; float amt; } route_t;
 
+/* one step: on, note above the root, velocity, gate (percent of the step) */
+typedef struct { uint8_t on, vel, gate; int8_t note; } seqstep_t;
+
 typedef struct {
     gen_t gen[NGEN];
     uint8_t uni;
@@ -56,10 +59,13 @@ typedef struct {
     uint8_t arp_on, arp_pattern, arp_rate, arp_oct;
     float arp_gate;
     uint16_t bpm;
+    uint8_t seq_on;
+    seqstep_t seq[16];
 } patch_t;
 
 static patch_t P;
 static uint8_t selected, page, preset_index, octave, fx_sel, env_sel, lfo_sel, route_sel;
+static uint8_t seq_voice, seq_sel, seq_at;
 
 /* the eight patches */
 #define G(on_, ty, wv, tb, ft, tn, lv, pn, cu, rs, pw, mo, ra, ix, fb, co) \
@@ -399,6 +405,16 @@ static void preset_load(uint8_t i)
     P.lfo2_amt = 0.35f;
     P.arp_on = 0; P.arp_pattern = 0; P.arp_rate = 1; P.arp_oct = 1;
     P.arp_gate = 0.60f; P.bpm = 120;
+    P.seq_on = 0;
+    {
+        static const int8_t seed[16] = {0, 3, 7, 10, 12, 10, 7, 3, 0, 7, 12, 15, 12, 7, 3, 0};
+        for (k = 0; k < 16; k++) {
+            P.seq[k].on = (uint8_t)((k % 2) == 0);
+            P.seq[k].note = seed[k];
+            P.seq[k].vel = (uint8_t)((k % 4 == 0) ? 120 : 84);
+            P.seq[k].gate = 55;
+        }
+    }
     preset_index = i;
 }
 
@@ -893,7 +909,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 5;
+    bank.ver = 6;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -905,7 +921,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 5 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 6 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -926,7 +942,7 @@ static void slot_pick(int d)
 /* ------------------------------------------------------------------- UI --- */
 static const char *const GEN_NAME[5] = {"OFF", "ANALOG", "WAVETABLE", "FM", "NOISE"};
 static const char *const FTYPE_NAME[5] = {"OFF", "LP", "HP", "BP", "NOTCH"};
-static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "PATCH"};
+static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "SEQ", "PATCH"};
 static const char *const FX_NAME[6] = {"OFF", "DRIVE", "CHORUS", "DELAY", "REVERB", "COMP"};
 static const char *const LFO_NAME[4] = {"SIN", "TRI", "SAW", "SQR"};
 static const char *const SRC_NAME[6] = {"--", "ENV1", "ENV2", "LFO1", "LFO2", "VELO"};
@@ -1151,6 +1167,21 @@ static void draw(void)
         cv_text(8, 74, &FONT_T, "GLO=toggle route", C_DIM);
         break;
     }
+    case PAGE_SEQ:
+        for (i = 0; i < 16; i++) {
+            seqstep_t *st = &P.seq[i];
+            int32_t x = (i % 8) * 29 + 1;
+            int32_t y = (i / 8) * 34;
+            if (i == seq_sel) cv_rect(x, y, 27, 30, C_LINE);
+            if (P.seq_on && i == seq_at) cv_rect(x + 2, y + 28, 23, 1, C_WHITE);
+            num_text(v, st->note);
+            cv_text(x + 4, y + 2, &FONT_T, v, st->on ? C_HI : C_DIM);
+            cv_rect(x + 4, y + 20, 19, 3, RGB(26, 36, 48));
+            if (st->on) cv_rect(x + 4, y + 20, (int32_t)((float)st->vel / 127.0f * 19.0f), 3, C_GRAY);
+        }
+        cv_text(8, 72, &FONT_T, "K1 STEP K2 NOTE K3 VEL K4 GATE", C_DIM);
+        cv_text(8, 86, &FONT_T, P.seq_on ? "RUNNING - SEQ stops it" : "SEQ runs it - PLAY taps tempo", C_DIM);
+        break;
     case PAGE_ARP:
         cv_text(8, 2, &FONT_S, P.arp_on ? "ARP ON" : "ARP OFF", P.arp_on ? C_HI : C_DIM);
         cv_text(8, 24, &FONT_T, "PATTERN", C_GRAY);
@@ -1214,9 +1245,9 @@ static void draw(void)
     /* page tabs */
     cv_begin(240, 18, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
-        int32_t x = i * 34;
+        int32_t x = i * 30;
         if (i == page) {
-            cv_rect(x + 1, 2, 33, 14, C_LINE);
+            cv_rect(x + 1, 2, 29, 14, C_LINE);
             cv_text(x + 3, 4, &FONT_T, PAGE_NAME[i], C_HI);
         } else {
             cv_text(x + 3, 4, &FONT_T, PAGE_NAME[i], C_DIM);
@@ -1325,6 +1356,46 @@ void app_arp_frame(uint32_t keys, uint32_t now)
     }
 }
 
+/* ----------------------------------------------------------------- seq --- */
+static void seq_rel(void)
+{
+    if (V[seq_voice].active && V[seq_voice].stage != 0 && V[seq_voice].stage != 4)
+        V[seq_voice].stage = 4;
+}
+
+static void seq_stop(void)
+{
+    seq_rel();
+    seq_at = 0xFF;
+}
+
+void app_seq_frame(uint32_t keys, uint32_t now)
+{
+    static uint32_t next_at, off_at;
+    static uint8_t step;
+    uint32_t ms = 15000u / (P.bpm ? P.bpm : 120u);
+    int i;
+
+    if (!P.seq_on) return;
+    if (seq_at == 0xFF) { step = 0; next_at = now; off_at = 0; seq_at = 0; }
+    if (off_at && now >= off_at) { seq_rel(); off_at = 0; }
+    if (now >= next_at) {
+        seqstep_t *st = &P.seq[step];
+        uint8_t root = 48;
+        for (i = 0; i < NKEYS; i++)
+            if (keys & (1u << i)) { root = (uint8_t)(53 + i); break; }
+        seq_rel();
+        if (st->on) {
+            seq_voice = (uint8_t)((seq_voice + 1) % NV);
+            voice_start(&V[seq_voice], (uint8_t)(root + st->note), (float)st->vel / 127.0f);
+            off_at = now + ms * (uint32_t)fm_clampf((float)st->gate, 5.0f, 95.0f) / 100u;
+        }
+        next_at = now + ms;
+        step = (uint8_t)((step + 1) % 16);
+        seq_at = (uint8_t)step;
+    }
+}
+
 /* ---------------------------------------------------------------- lights --- */
 #define ANIM_NONE 0
 #define ANIM_SWEEP 1
@@ -1333,7 +1404,7 @@ void app_arp_frame(uint32_t keys, uint32_t now)
 static float key_glow[NKEYS];
 static uint32_t anim_t0, anim_kind;
 
-static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_ARP, B_SAVE};
+static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_ARP, B_SEQ, B_SAVE};
 
 static void anim_start(uint8_t kind, uint32_t now)
 {
@@ -1390,7 +1461,8 @@ void app_frame(void)
 
     uint32_t now = plat_ms();
     btn_prev = btns;
-    if (P.arp_on) app_arp_frame(keys, now);
+    if (P.seq_on) app_seq_frame(keys, now);
+    else if (P.arp_on) app_arp_frame(keys, now);
     else key_edges(keys);
     plat_lights(0, keys, 0, 0, 1);
 
@@ -1406,6 +1478,12 @@ void app_frame(void)
         anim_start(ANIM_BLINK, now);
     }
     if (pressed & (1u << B_SEQ)) {
+        P.seq_on = (uint8_t)!P.seq_on;
+        if (P.seq_on) { P.arp_on = 0; arp_reset(); seq_stop(); }
+        else seq_stop();
+        anim_start(ANIM_BLINK, now);
+    }
+    if (pressed & (1u << B_PLAY)) {
         static uint32_t last_tap;
         if (last_tap && now - last_tap < 2000u) {
             uint32_t ms = now - last_tap;
@@ -1455,6 +1533,9 @@ void app_frame(void)
         case PAGE_ARP:
             P.arp_pattern = (uint8_t)((P.arp_pattern + (d > 0 ? 1 : 3)) & 3);
             break;
+        case PAGE_SEQ:
+            seq_sel = (uint8_t)((seq_sel + (d > 0 ? 1 : 15)) & 15);
+            break;
         default:
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 31)) % 32));
             anim_start(ANIM_SWEEP, now);
@@ -1490,6 +1571,12 @@ void app_frame(void)
         case PAGE_ARP:
             P.arp_rate = (uint8_t)((P.arp_rate + (d > 0 ? 1 : 4)) % 5);
             break;
+        case PAGE_SEQ: {
+            int32_t n = (int32_t)P.seq[seq_sel].note + (d > 0 ? 1 : -1);
+            P.seq[seq_sel].note = (int8_t)clamp(n, 0, 24);
+            P.seq[seq_sel].on = 1;
+            break;
+        }
         default:
             slot_pick(d > 0 ? 1 : -1);
             break;
@@ -1524,6 +1611,11 @@ void app_frame(void)
         case PAGE_ARP:
             P.arp_oct = (uint8_t)clamp((int32_t)P.arp_oct + (d > 0 ? 1 : -1), 1, 3);
             break;
+        case PAGE_SEQ: {
+            int32_t v = (int32_t)P.seq[seq_sel].vel + (d > 0 ? 8 : -8);
+            P.seq[seq_sel].vel = (uint8_t)clamp(v, 8, 127);
+            break;
+        }
         }
     }
     d = plat_enc(EN_K4);
@@ -1551,6 +1643,11 @@ void app_frame(void)
         case PAGE_ARP:
             P.arp_gate = fm_clampf(P.arp_gate + (float)d * 0.02f, 0.05f, 0.95f);
             break;
+        case PAGE_SEQ: {
+            int32_t gt = (int32_t)P.seq[seq_sel].gate + (d > 0 ? 5 : -5);
+            P.seq[seq_sel].gate = (uint8_t)clamp(gt, 5, 95);
+            break;
+        }
         }
     }
 
@@ -1619,6 +1716,10 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "arprate")) { *got = P.arp_rate; return 1; }
     if (!strcmp(what, "bpm")) { *got = P.bpm; return 1; }
     if (!strcmp(what, "arpstep")) { *got = arp_step; return 1; }
+    if (!strcmp(what, "seq")) { *got = P.seq_on; return 1; }
+    if (!strcmp(what, "seqstep")) { *got = seq_at; return 1; }
+    if (!strcmp(what, "seqsel")) { *got = seq_sel; return 1; }
+    if (!strcmp(what, "seqnote")) { *got = P.seq[seq_sel].note; return 1; }
     return 0;
 }
 #endif
