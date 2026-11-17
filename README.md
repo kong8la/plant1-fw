@@ -4,15 +4,27 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M6: thirty-two presets
+
+![M6 on the screen](docs/m6.png)
+
+Four banks of eight, each with its own generators, envelopes, effects and matrix:
+
+| Bank | Presets |
+| --- | --- |
+| **BELLS** | INIT, GLASS BELL, MUSIC BOX, VIBES, CELESTA, TUBULAR, HARP, ICE BELL |
+| **BASS** | FM BASS, SUB BASS, ACID, REESE, GROWL, WUB, PLUCK BASS, SQUARE BASS |
+| **LEAD** | SUPER SAW, HOOVER, METAL, SYNC, FLUTE, WHISTLE, SOLO, BUZZ |
+| **PADS** | PHASE PAD, DARK CHOIR, SWEEP, STRINGS, DRONE, WASH, GLASS PAD, NOISE PAD |
+
+On PATCH: `K1` steps a preset, `K3` jumps a bank, `K2` picks one of the four flash slots, `SAVE`
+stores the current sound there.
+
 ## M5: an arpeggiator
 
-![M5 on the screen](docs/m5.png)
-
-- **patterns**: UP, DOWN, UPDN (ping-pong), RAND
-- **rates**: 1/4, 1/8, 1/8T, 1/16, 1/16T against the tempo
-- **octaves** 1-3, **gate** 5-95 % of the step
-- **tap tempo** on SEQ (60-200 BPM), the ARP page shows the tempo
-- ARP toggles it from any page; held keys become the arp's note pool
+- patterns UP, DOWN, UPDN, RAND; rates 1/4 to 1/16T; 1-3 octaves; gate 5-95 %
+- tap tempo on SEQ (60-200 BPM), the ARP page shows it
+- ARP toggles it from any page; held keys are the arp's note pool
 
 ## M4: a modulation matrix
 
@@ -24,11 +36,10 @@ This repository builds a real `.fwsc` package you can flash with
 
 - five effect slots: DRIVE, CHORUS, DELAY (139 ms), REVERB, COMP
 - an FX page (K1 walks the chain, K2-K4 edit A/B/C, FX toggles)
-- four patch slots in flash (PATCH page: K2 picks, SAVE stores)
+- four patch slots in flash
 
-## M2: presets, envelopes and an LFO
+## M2: envelopes and LFOs
 
-- eight presets: INIT, GLASS BELL, FM BASS, SUPER SAW, PHASE PAD, PLUCK, ACID, DARK CHOIR
 - ENV page with the curve drawn, LFO page with its shape, patch storage
 - a screen that draws each slot's waveform, the envelope and the LFO
 
@@ -49,10 +60,11 @@ Local host simulator (any OS, plain `cc`):
 
 ```bash
 ./build.sh --host
-app/build/host/plant1m5_host app/tests/basic.txt app/build/host
-app/build/host/plant1m5_host app/tests/arp.txt app/build/host
-app/build/host/plant1m5_host app/tests/mod.txt app/build/host
-app/build/host/plant1m5_host app/tests/fx.txt app/build/host
+app/build/host/plant1m6_host app/tests/basic.txt app/build/host
+app/build/host/plant1m6_host app/tests/presets.txt app/build/host
+app/build/host/plant1m6_host app/tests/arp.txt app/build/host
+app/build/host/plant1m6_host app/tests/mod.txt app/build/host
+app/build/host/plant1m6_host app/tests/fx.txt app/build/host
 ```
 
 The device build needs a Linux host (the toolchain is Linux x86-64 only); `build.sh` and the
@@ -64,21 +76,16 @@ Actions workflow are the two supported ways.
 2. Open <https://kong8la.com/plant1/flash/> in desktop Chrome or Edge.
 3. The page loads the current build by itself; connect the FM-1 over USB and press Install.
 
-The package identity is `FM-1_9500` for M5. The flash page checks the package's SHA-256, its
+The package identity is `FM-1_9600` for M6. The flash page checks the package's SHA-256, its
 identity and that it carries the update loader before anything is written.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `app/app.c`, `app/app.h` | the app: engine, modulation, arp, presets, effects, panel, screen, storage |
+| `app/app.c`, `app/app.h` | the app: engine, presets, modulation, arp, effects, panel, screen, storage |
 | `app/fm1.toml` | name, package identity, USB names, licence |
-| `app/tests/basic.txt` | keys, slots, pages, presets |
-| `app/tests/arp.txt` | the arpeggiator, its page and tap tempo |
-| `app/tests/mod.txt` | the matrix and the AMP/MOD and LFO1/LFO2 switches |
-| `app/tests/fx.txt` | the FX chain and the flash slots |
-| `app/tests/leds.txt` | the light show (prints the LED masks) |
-| `app/tests/audio*.txt` | render to `note.wav` / `tail.wav` |
+| `app/tests/*.txt` | the host simulator checks (basic, presets, arp, mod, fx, leds, audio) |
 | `build.sh` | fetches fm1-base at a pinned commit, runs its `tools/build.py` |
 | `test.sh` | the host simulator checks, run by CI |
 
@@ -86,11 +93,12 @@ identity and that it carries the update loader before anything is written.
 
 - **M0**: one FM voice, ADSR, keys, screen, the build/flash chain proven
 - **M1**: 4 generator slots, per-slot filter, unison, 6 voices, panel pages
-- **M2**: presets, envelopes with the curve, an LFO, patch storage, a screen that shows the sound
+- **M2**: envelopes with the curve, an LFO, patch storage, a screen that shows the sound
 - **M3**: 5-slot effects, an FX page, four flash patch slots
-- **M4**: a modulation matrix (ENV1/ENV2/LFO1/LFO2/velocity to any slot's level, cutoff, pitch)
-- **M5** (this): an arpeggiator with patterns, rates, octaves, gate and tap tempo
-- **M6**: MIDI CC mapping, sixteen presets, a step sequencer
+- **M4**: a modulation matrix
+- **M5**: an arpeggiator with tap tempo
+- **M6** (this): thirty-two presets in four banks
+- **M7**: MIDI CC mapping, a step sequencer
 
 ## Licences
 

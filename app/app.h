@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MIT
- * PLANT-1 M5: an arpeggiator with tap tempo. */
+ * PLANT-1 M6: thirty-two presets in four banks. */
 #pragma once
 #include <stdint.h>
 #include "plat.h"
 
-#define APP_NAME "PLANT1M5"
+#define APP_NAME "PLANT1M6"
 #define APP_SPLASH_RGB RGB(56, 189, 248)
 #define APP_BLOCK 256u
 

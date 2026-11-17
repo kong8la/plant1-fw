@@ -1,0 +1,39 @@
+wait 300
+expect preset 0
+# six EDITs reach PATCH (GEN ENV LFO MOD FX ARP PATCH)
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 6
+# K1 steps through the bank
+turn K1 3
+wait 30
+expect preset 3
+shot b1.png
+# K3 jumps a bank (8 presets)
+turn K3 1
+wait 30
+expect preset 11
+shot b2.png
+turn K3 1
+wait 30
+expect preset 19
+turn K3 1
+wait 30
+expect preset 27
+turn K3 1
+wait 30
+expect preset 3
+# every preset loads and plays
+turn K1 1
+wait 30
+expect preset 4
+key 7 down
+wait 80
+expect voices 1
+key 7 up
+wait 200
