@@ -1,0 +1,36 @@
+wait 300
+# the MOTIF page: style, density, scale, dice
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 7
+expect genre 0
+expect density 5
+turn K1 1
+wait 30
+expect genre 1
+turn K2 3
+wait 30
+expect density 8
+turn K3 1
+wait 30
+shot motif.png
+# the dice: a new pattern from the same style
+turn K4 1
+wait 30
+expect seed 14
+shot motif2.png
+# run it
+tap HOME
+tap SEQ
+tap SEQ
+wait 200
+expect seq 1
+tap SEQ
+wait 30
+expect seq 0

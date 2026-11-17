@@ -4,6 +4,19 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M12: the motif generator
+
+![The MOTIF page](docs/m12.png)
+
+A style, a density, a scale and a seed become sixteen steps — JIANT's dice, in our sequencer.
+
+- **six styles**: TECHNO (four on the floor), HOUSE (offbeat), ACID (dense sixteenths), BREAKS
+  (syncopated), AMBIENT (sparse, long gates), TRANCE (eighth-note arpeggio)
+- **density 1..16** and **four scales** (minor, dorian, pentatonic, major)
+- **seed 0..9999**: the four-digit seed and the style pick one of ten thousand patterns
+- MOTIF page: K1 style, K2 density, K3 scale, **K4 rolls the dice**; the page previews the sixteen
+  steps as bars
+- every K knob now prints its name while it turns (K3 PAN, K3 SCALE, ...), so no knob is a mystery
 ## M11: the panel, after JIANT, in the browser's colours
 
 The screen uses the CYAN palette (APP_PALETTE 2), the browser PLANT-1's accent, with filled

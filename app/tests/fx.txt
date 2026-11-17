@@ -25,8 +25,9 @@ shot fx.png
 tap EDIT
 tap EDIT
 tap EDIT
+tap EDIT
 wait 30
-expect page 7
+expect page 8
 turn K2 1
 wait 30
 expect slot 1

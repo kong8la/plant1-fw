@@ -8,8 +8,9 @@ tap EDIT
 tap EDIT
 tap EDIT
 tap EDIT
+tap EDIT
 wait 30
-expect page 7
+expect page 8
 # K1 steps through the bank
 turn K1 3
 wait 30

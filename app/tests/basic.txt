@@ -33,6 +33,9 @@ expect page 6
 tap EDIT
 wait 30
 expect page 7
+tap EDIT
+wait 30
+expect page 8
 # K1 on PATCH loads the next preset
 turn K1 1
 wait 30

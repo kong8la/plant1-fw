@@ -17,7 +17,7 @@
 enum { G_OFF, G_ANALOG, G_WT, G_FM, G_NOISE };
 enum { W_SAW, W_SQUARE, W_PULSE, W_SINE };
 enum { F_OFF, F_LP, F_HP, F_BP, F_NOTCH };
-enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_SEQ, PAGE_PRESET, NPAGES };
+enum { PAGE_GEN, PAGE_ENV, PAGE_LFO, PAGE_MOD, PAGE_FX, PAGE_ARP, PAGE_SEQ, PAGE_MOTIF, PAGE_PRESET, NPAGES };
 enum { LFO_SIN, LFO_TRI, LFO_SAW, LFO_SQR };
 enum { LT_CUT, LT_TREM };
 
@@ -61,6 +61,8 @@ typedef struct {
     uint16_t bpm;
     uint8_t seq_on;
     seqstep_t seq[16];
+    uint8_t genre, density, scale;
+    uint16_t seed;
 } patch_t;
 
 static patch_t P;
@@ -420,6 +422,10 @@ static void preset_load(uint8_t i)
     P.arp_on = 0; P.arp_pattern = 0; P.arp_rate = 1; P.arp_oct = 1;
     P.arp_gate = 0.60f; P.bpm = 120;
     P.seq_on = 0;
+    P.genre = (uint8_t)(i % 6);
+    P.density = (uint8_t)(5 + (i % 8));
+    P.scale = (uint8_t)(i % 4);
+    P.seed = (uint16_t)((i * 277 + 13) % 10000);
     {
         static const int8_t seed[16] = {0, 3, 7, 10, 12, 10, 7, 3, 0, 7, 12, 15, 12, 7, 3, 0};
         for (k = 0; k < 16; k++) {
@@ -1013,7 +1019,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 6;
+    bank.ver = 7;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -1025,7 +1031,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 6 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 7 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -1046,7 +1052,7 @@ static void slot_pick(int d)
 /* ------------------------------------------------------------------- UI --- */
 static const char *const GEN_NAME[5] = {"OFF", "ANALOG", "WAVETABLE", "FM", "NOISE"};
 static const char *const FTYPE_NAME[5] = {"OFF", "LP", "HP", "BP", "NOTCH"};
-static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "SEQ", "PATCH"};
+static const char *const PAGE_NAME[NPAGES] = {"GEN", "ENV", "LFO", "MOD", "FX", "ARP", "SEQ", "MOTIF", "PATCH"};
 static const char *const FX_NAME[6] = {"OFF", "DRIVE", "CHORUS", "DELAY", "REVERB", "COMP"};
 static const char *const LFO_NAME[4] = {"SIN", "TRI", "SAW", "SQR"};
 static const char *const SRC_NAME[6] = {"--", "ENV1", "ENV2", "LFO1", "LFO2", "VELO"};
@@ -1054,6 +1060,25 @@ static const char *const DST_NAME[3] = {"LVL", "CUT", "PIT"};
 static const char *const PAT_NAME[4] = {"UP", "DOWN", "UPDN", "RAND"};
 static const char *const RATE_NAME[5] = {"1/4", "1/8", "1/8T", "1/16", "1/16T"};
 static const char *const BANK_NAME[4] = {"BELLS", "BASS", "LEAD", "PADS"};
+static const char *const GENRE_NAME[6] = {"TECHNO", "HOUSE", "ACID", "BREAKS", "AMBIENT", "TRANCE"};
+static const char *const SCALE_NAME[4] = {"MINOR", "DORIAN", "PENTA", "MAJOR"};
+static const int8_t SCALE_STEPS[4][7] = {
+    {0, 2, 3, 5, 7, 8, 10},
+    {0, 2, 3, 5, 7, 9, 10},
+    {0, 3, 5, 7, 10, 12, 15},
+    {0, 2, 4, 5, 7, 9, 11}
+};
+static const char *const K_LABEL[NPAGES][4] = {
+    {"TYPE", "LEVEL", "PAN", "TUNE"},
+    {"A", "D", "S", "R"},
+    {"SHAPE", "RATE", "AMT", "TARGET"},
+    {"SRC", "DST", "DEPTH", "-"},
+    {"SLOT", "A", "B", "C"},
+    {"PATTERN", "RATE", "OCT", "GATE"},
+    {"STEP", "NOTE", "VEL", "GATE"},
+    {"STYLE", "DENSITY", "SCALE", "ROLL"},
+    {"PRESET", "SLOT", "BANK", "-"}
+};
 
 static void note_text(char *out, int32_t m)
 {
@@ -1343,6 +1368,25 @@ static void draw(void)
         cv_text(80, 60, &FONT_S, v, C_HI);
         cv_text(8, 80, &FONT_T, "K1 PAT K2 RATE K3 OCT K4 GATE", C_DIM);
         break;
+    case PAGE_MOTIF:
+        cv_text(8, 2, &FONT_S, GENRE_NAME[P.genre % 6], C_HI);
+        num_text(v, P.density ? P.density : 1);
+        cv_text(8, 26, &FONT_T, "K1 STYLE K2 DENSITY", C_DIM);
+        cv_text(8, 40, &FONT_T, "DENS", C_GRAY);
+        cv_text(48, 38, &FONT_S, v, C_HI);
+        cv_text(110, 40, &FONT_T, "SCALE", C_GRAY);
+        cv_text(160, 38, &FONT_S, SCALE_NAME[P.scale & 3], C_HI);
+        num_text(v, P.seed % 10000);
+        cv_text(8, 56, &FONT_T, "SEED", C_GRAY);
+        cv_text(48, 54, &FONT_S, v, C_HI);
+        for (i = 0; i < 16; i++) {
+            int32_t x = 8 + i * 14;
+            int32_t h = P.seq[i].on ? 6 + (P.seq[i].note % 12) : 2;
+            if (h > 16) h = 16;
+            cv_rect(x, 78 - h, 10, h, P.seq[i].on ? C_HI : RGB(22, 31, 40));
+        }
+        cv_text(8, 84, &FONT_T, "K3 SCALE  K4 ROLL THE DICE", C_DIM);
+        break;
     case PAGE_SEQ:
         for (i = 0; i < 16; i++) {
             seqstep_t *st = &P.seq[i];
@@ -1423,6 +1467,12 @@ static void draw(void)
         } else if (osd_kind == 4) {
             cv_text(8, 3, &FONT_T, "PANIC", C_HI);
             cv_text(52, 3, &FONT_T, "all notes off", C_GRAY);
+        } else if (osd_kind >= 6) {
+            int k = osd_kind - 6;
+            cv_text(8, 3, &FONT_T, "K", C_HI);
+            num_text(v, k + 1);
+            cv_text(20, 3, &FONT_T, v, C_HI);
+            cv_text(34, 3, &FONT_T, K_LABEL[page][k], C_WHITE);
         } else {
             cv_text(8, 3, &FONT_T, "SAVE", C_HI);
             cv_text(40, 3, &FONT_T, "stored to slot", C_GRAY);
@@ -1442,12 +1492,12 @@ static void draw(void)
     /* page tabs: a lit pill on the current page */
     cv_begin(240, 20, C_BLACK);
     for (i = 0; i < NPAGES; i++) {
-        int32_t x = i * 30;
+        int32_t x = i * 26;
         if (i == page) {
-            cv_rect(x + 1, 3, 28, 15, C_HI);
-            cv_text(x + 3, 5, &FONT_T, PAGE_NAME[i], C_BLACK);
+            cv_rect(x + 1, 3, 25, 15, C_HI);
+            cv_text(x + 2, 5, &FONT_T, PAGE_NAME[i], C_BLACK);
         } else {
-            cv_text(x + 3, 6, &FONT_T, PAGE_NAME[i], C_DIM);
+            cv_text(x + 2, 6, &FONT_T, PAGE_NAME[i], C_DIM);
         }
     }
     cv_blit(0, 220);
@@ -1553,6 +1603,71 @@ void app_arp_frame(uint32_t keys, uint32_t now)
     }
 }
 
+/* --------------------------------------------------------------- motif --- */
+static uint32_t mseed;
+
+static uint32_t mrnd(void)
+{
+    mseed = mseed * 1664525u + 1013904223u;
+    return (mseed >> 8) & 0xFFFFu;
+}
+
+/* a style and a seed become sixteen steps: rhythm first, then a note from the scale */
+static void motif_generate(void)
+{
+    uint32_t seed = (uint32_t)P.seed * 2654435761u ^ ((uint32_t)P.genre + 1u) * 40503u;
+    const int8_t *sc = SCALE_STEPS[P.scale & 3];
+    int dens = P.density < 1 ? 1 : P.density;
+    int i;
+    int deg = 2;
+
+    mseed = seed | 1u;
+    for (i = 0; i < 16; i++) {
+        int hit = 0, accent = 0;
+        switch (P.genre) {
+        case 0:                                     /* TECHNO: four on the floor */
+            hit = (i % 4) == 0 || (mrnd() % 100) < (uint32_t)dens * 5u;
+            accent = (i % 4) == 0;
+            break;
+        case 1:                                     /* HOUSE: offbeat */
+            hit = (i % 4) == 2 || (mrnd() % 100) < (uint32_t)dens * 4u;
+            accent = (i % 4) == 2;
+            break;
+        case 2:                                     /* ACID: dense sixteenths */
+            hit = (mrnd() % 100) < 60u + (uint32_t)dens * 2u;
+            accent = (i % 8) == 0;
+            break;
+        case 3:                                     /* BREAKS: syncopated */
+            hit = (i % 8) == 0 || (i % 8) == 3 || (i % 8) == 6 || (mrnd() % 100) < (uint32_t)dens * 4u;
+            accent = (i % 8) == 0;
+            break;
+        case 4:                                     /* AMBIENT: sparse */
+            hit = (mrnd() % 100) < (uint32_t)dens * 2u;
+            break;
+        default:                                    /* TRANCE: eighths, arpeggio */
+            hit = (i % 2) == 0;
+            accent = (i % 8) == 0;
+            break;
+        }
+        P.seq[i].on = (uint8_t)hit;
+        if (!hit) { P.seq[i].note = 0; P.seq[i].vel = 0; P.seq[i].gate = 0; continue; }
+        if (P.genre == 5) {
+            deg = (deg + 1) % 7;                    /* an arpeggio walks the scale */
+        } else if (P.genre == 4) {
+            if ((mrnd() % 3) == 0) deg = (int)(mrnd() % 7);
+        } else {
+            int step = (int)(mrnd() % 5) - 2;       /* mostly stepwise */
+            deg += step;
+            if (deg < 0) deg += 7;
+            deg %= 7;
+        }
+        P.seq[i].note = (int8_t)(sc[deg] + ((mrnd() % 4) == 0 ? 12 : 0));
+        P.seq[i].vel = (uint8_t)(accent ? 120 : 78 + (int)(mrnd() % 26));
+        P.seq[i].gate = (uint8_t)(35 + (mrnd() % 55));
+        if (P.genre == 4) P.seq[i].gate = 90;
+    }
+}
+
 /* ----------------------------------------------------------------- seq --- */
 static void seq_rel(void)
 {
@@ -1601,7 +1716,7 @@ void app_seq_frame(uint32_t keys, uint32_t now)
 static float key_glow[NKEYS];
 static uint32_t anim_t0, anim_kind;
 
-static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_ARP, B_SEQ, B_SAVE};
+static const uint8_t PAGE_BTN[NPAGES] = {B_SEL, B_ENV, B_LFO, B_GLO, B_FX, B_ARP, B_SEQ, B_REC, B_SAVE};
 
 static void anim_start(uint8_t kind, uint32_t now)
 {
@@ -1815,7 +1930,7 @@ void app_frame(void)
 
     d = plat_enc(EN_K1);
     if (d) {
-        osd_kind = 0;
+        osd_kind = 6; osd_until = now + 900u;
         switch (page) {
         case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
@@ -1844,6 +1959,10 @@ void app_frame(void)
         case PAGE_SEQ:
             seq_sel = (uint8_t)((seq_sel + (d > 0 ? 1 : 15)) & 15);
             break;
+        case PAGE_MOTIF:
+            P.genre = (uint8_t)((P.genre + (d > 0 ? 1 : 5)) % 6);
+            motif_generate();
+            break;
         default:
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 31)) % 32));
             arp_reset();
@@ -1853,6 +1972,7 @@ void app_frame(void)
     }
     d = plat_enc(EN_K2);
     if (d) {
+        osd_kind = 7; osd_until = now + 900u;
         switch (page) {
         case PAGE_GEN:
             P.gen[selected].level = fm_clampf(P.gen[selected].level + (float)d * 0.02f, 0.0f, 1.0f);
@@ -1886,6 +2006,10 @@ void app_frame(void)
             P.seq[seq_sel].on = 1;
             break;
         }
+        case PAGE_MOTIF:
+            P.density = (uint8_t)clamp((int32_t)P.density + (d > 0 ? 1 : -1), 1, 16);
+            motif_generate();
+            break;
         default:
             slot_pick(d > 0 ? 1 : -1);
             break;
@@ -1893,6 +2017,7 @@ void app_frame(void)
     }
     d = plat_enc(EN_K3);
     if (d) {
+        osd_kind = 8; osd_until = now + 900u;
         switch (page) {
         case PAGE_GEN:
             P.gen[selected].pan = fm_clampf(P.gen[selected].pan + (float)d * 0.05f, -1.0f, 1.0f);
@@ -1925,10 +2050,15 @@ void app_frame(void)
             P.seq[seq_sel].vel = (uint8_t)clamp(v, 8, 127);
             break;
         }
+        case PAGE_MOTIF:
+            P.scale = (uint8_t)((P.scale + (d > 0 ? 1 : 3)) & 3);
+            motif_generate();
+            break;
         }
     }
     d = plat_enc(EN_K4);
     if (d) {
+        osd_kind = 9; osd_until = now + 900u;
         switch (page) {
         case PAGE_GEN:
             P.gen[selected].tune = (int8_t)clamp((int32_t)P.gen[selected].tune + (d > 0 ? 1 : -1), -24, 24);
@@ -1957,6 +2087,11 @@ void app_frame(void)
             P.seq[seq_sel].gate = (uint8_t)clamp(gt, 5, 95);
             break;
         }
+        case PAGE_MOTIF:
+            P.seed = (uint16_t)((P.seed + (d > 0 ? 1 : 9999)) % 10000);
+            motif_generate();
+            anim_start(ANIM_SWEEP, now);
+            break;
         }
     }
 
@@ -2026,6 +2161,11 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "bpm")) { *got = P.bpm; return 1; }
     if (!strcmp(what, "arpstep")) { *got = arp_step; return 1; }
     if (!strcmp(what, "seq")) { *got = P.seq_on; return 1; }
+    if (!strcmp(what, "genre")) { *got = P.genre; return 1; }
+    if (!strcmp(what, "density")) { *got = P.density; return 1; }
+    if (!strcmp(what, "seed")) { *got = P.seed; return 1; }
+    if (!strcmp(what, "motif")) { motif_generate(); *got = 1; return 1; }
+    if (!strcmp(what, "motifon")) { int c = 0, k; for (k = 0; k < 16; k++) if (P.seq[k].on) c++; *got = c; return 1; }
     if (!strcmp(what, "seqstep")) { *got = seq_at; return 1; }
     if (!strcmp(what, "seqsel")) { *got = seq_sel; return 1; }
     if (!strcmp(what, "seqnote")) { *got = P.seq[seq_sel].note; return 1; }
