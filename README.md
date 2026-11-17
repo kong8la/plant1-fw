@@ -4,6 +4,15 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M13: euclid, mutate and chords
+
+![The EUCLID page](docs/m13.png)
+
+- **EUCLID**: hits spread over 2-16 steps with a rotation; REC on the MOTIF page switches STYLE / EUCLID.
+  K1 steps, K2 hits, K3 rotate, K4 writes the pattern
+- **MUTATE**: hold GLO on the MOTIF page and the pattern keeps its rhythm but a few steps change
+- **CHORD**: hold REC on the SEQ page; every step then plays root + third + fifth from the scale
+- the MOTIF page previews the sixteen steps as bars
 ## M12: the motif generator
 
 ![The MOTIF page](docs/m12.png)

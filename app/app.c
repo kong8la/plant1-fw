@@ -63,6 +63,9 @@ typedef struct {
     seqstep_t seq[16];
     uint8_t genre, density, scale;
     uint16_t seed;
+    uint8_t motif_mode;                  /* 0 style, 1 euclid */
+    uint8_t e_steps, e_hits, e_rot;
+    uint8_t chord;
 } patch_t;
 
 static patch_t P;
@@ -426,6 +429,9 @@ static void preset_load(uint8_t i)
     P.density = (uint8_t)(5 + (i % 8));
     P.scale = (uint8_t)(i % 4);
     P.seed = (uint16_t)((i * 277 + 13) % 10000);
+    P.motif_mode = 0;
+    P.e_steps = 8; P.e_hits = 5; P.e_rot = 0;
+    P.chord = 0;
     {
         static const int8_t seed[16] = {0, 3, 7, 10, 12, 10, 7, 3, 0, 7, 12, 15, 12, 7, 3, 0};
         for (k = 0; k < 16; k++) {
@@ -1019,7 +1025,7 @@ static uint8_t slot_index;
 static void patch_save(void)
 {
     bank.magic = SAVE_MAGIC;
-    bank.ver = 7;
+    bank.ver = 8;
     bank.cur = slot_index;
     bank.slot[slot_index].used = 1;
     bank.slot[slot_index].preset = preset_index;
@@ -1031,7 +1037,7 @@ static int patch_load(void)
 {
     int k;
     if (plat_store_load(OBJ_SETTINGS, &bank, sizeof bank) != (int)sizeof bank) return 0;
-    if (bank.magic != SAVE_MAGIC || bank.ver != 7 || bank.cur >= NSLOT) return 0;
+    if (bank.magic != SAVE_MAGIC || bank.ver != 8 || bank.cur >= NSLOT) return 0;
     slot_index = bank.cur;
     if (!bank.slot[slot_index].used) return 0;
     P = bank.slot[slot_index].p;
@@ -1369,23 +1375,38 @@ static void draw(void)
         cv_text(8, 80, &FONT_T, "K1 PAT K2 RATE K3 OCT K4 GATE", C_DIM);
         break;
     case PAGE_MOTIF:
-        cv_text(8, 2, &FONT_S, GENRE_NAME[P.genre % 6], C_HI);
-        num_text(v, P.density ? P.density : 1);
-        cv_text(8, 26, &FONT_T, "K1 STYLE K2 DENSITY", C_DIM);
-        cv_text(8, 40, &FONT_T, "DENS", C_GRAY);
-        cv_text(48, 38, &FONT_S, v, C_HI);
-        cv_text(110, 40, &FONT_T, "SCALE", C_GRAY);
-        cv_text(160, 38, &FONT_S, SCALE_NAME[P.scale & 3], C_HI);
-        num_text(v, P.seed % 10000);
-        cv_text(8, 56, &FONT_T, "SEED", C_GRAY);
-        cv_text(48, 54, &FONT_S, v, C_HI);
+        if (P.motif_mode == 0) {
+            cv_text(8, 2, &FONT_S, "STYLE", C_GRAY);
+            cv_text(70, 0, &FONT_S, GENRE_NAME[P.genre % 6], C_HI);
+            num_text(v, P.density ? P.density : 1);
+            cv_text(8, 40, &FONT_T, "DENS", C_GRAY);
+            cv_text(48, 38, &FONT_S, v, C_HI);
+            cv_text(110, 40, &FONT_T, "SCALE", C_GRAY);
+            cv_text(160, 38, &FONT_S, SCALE_NAME[P.scale & 3], C_HI);
+            num_text(v, P.seed % 10000);
+            cv_text(8, 56, &FONT_T, "SEED", C_GRAY);
+            cv_text(48, 54, &FONT_S, v, C_HI);
+            cv_text(8, 78, &FONT_T, "K4 ROLL  REC=EUCLID", C_DIM);
+        } else {
+            cv_text(8, 2, &FONT_S, "EUCLID", C_GRAY);
+            num_text(v, P.e_steps);
+            cv_text(70, 0, &FONT_S, v, C_HI);
+            cv_text(96, 2, &FONT_T, "steps", C_GRAY);
+            num_text(v, P.e_hits);
+            cv_text(8, 40, &FONT_T, "HITS", C_GRAY);
+            cv_text(48, 38, &FONT_S, v, C_HI);
+            num_text(v, P.e_rot);
+            cv_text(110, 40, &FONT_T, "ROTATE", C_GRAY);
+            cv_text(170, 38, &FONT_S, v, C_HI);
+            cv_text(8, 56, &FONT_T, "K4 WRITE", C_DIM);
+        }
         for (i = 0; i < 16; i++) {
             int32_t x = 8 + i * 14;
             int32_t h = P.seq[i].on ? 6 + (P.seq[i].note % 12) : 2;
             if (h > 16) h = 16;
             cv_rect(x, 78 - h, 10, h, P.seq[i].on ? C_HI : RGB(22, 31, 40));
         }
-        cv_text(8, 84, &FONT_T, "K3 SCALE  K4 ROLL THE DICE", C_DIM);
+        cv_text(8, 84, &FONT_T, P.chord ? "CHORD  GLO=MUTATE  REC=SWITCH" : "GLO=MUTATE  REC=SWITCH", C_DIM);
         break;
     case PAGE_SEQ:
         for (i = 0; i < 16; i++) {
@@ -1467,6 +1488,15 @@ static void draw(void)
         } else if (osd_kind == 4) {
             cv_text(8, 3, &FONT_T, "PANIC", C_HI);
             cv_text(52, 3, &FONT_T, "all notes off", C_GRAY);
+        } else if (osd_kind == 10) {
+            cv_text(8, 3, &FONT_T, "MOTIF", C_HI);
+            cv_text(52, 3, &FONT_T, P.motif_mode ? "EUCLID" : "STYLE", C_WHITE);
+        } else if (osd_kind == 11) {
+            cv_text(8, 3, &FONT_T, "CHORD", C_HI);
+            cv_text(52, 3, &FONT_T, P.chord ? "ON" : "OFF", C_WHITE);
+        } else if (osd_kind == 12) {
+            cv_text(8, 3, &FONT_T, "MUTATE", C_HI);
+            cv_text(58, 3, &FONT_T, "a variation of the pattern", C_GRAY);
         } else if (osd_kind >= 6) {
             int k = osd_kind - 6;
             cv_text(8, 3, &FONT_T, "K", C_HI);
@@ -1668,6 +1698,51 @@ static void motif_generate(void)
     }
 }
 
+/* euclid: hits spread over steps, rotated; the notes come from the scale */
+static void euclid_generate(void)
+{
+    const int8_t *sc = SCALE_STEPS[P.scale & 3];
+    int steps = P.e_steps < 2 ? 2 : (P.e_steps > 16 ? 16 : P.e_steps);
+    int hits = P.e_hits < 1 ? 1 : (P.e_hits > steps ? steps : P.e_hits);
+    int rot = P.e_rot % steps;
+    int i, deg = 0;
+
+    for (i = 0; i < 16; i++) {
+        int hit = 0;
+        if (i < steps) {
+            int j = (i + rot) % steps;
+            hit = ((j * hits) % steps) < hits;
+        }
+        P.seq[i].on = (uint8_t)hit;
+        if (!hit) { P.seq[i].note = 0; P.seq[i].vel = 0; P.seq[i].gate = 0; continue; }
+        deg = (deg + ((i % 3) == 0 ? 2 : 1)) % 7;
+        P.seq[i].note = (int8_t)(sc[deg] + ((i % 8) == 0 ? 12 : 0));
+        P.seq[i].vel = (uint8_t)((i % 4) == 0 ? 118 : 88);
+        P.seq[i].gate = 45;
+    }
+}
+
+/* mutate: keep the rhythm, nudge a few steps */
+static void motif_mutate(void)
+{
+    int k, n = 0;
+    mseed = (uint32_t)P.seed * 2246822519u + 7u;
+    for (k = 0; k < 16; k++) {
+        uint32_t r = mrnd() % 100u;
+        if (r < 18u && n < 5) {
+            n++;
+            P.seq[k].on = (uint8_t)!P.seq[k].on;
+            if (P.seq[k].on) {
+                P.seq[k].note = (int8_t)((P.seq[k].note + 2 + (int)(mrnd() % 7)) % 25);
+                P.seq[k].vel = (uint8_t)(80 + mrnd() % 40);
+                P.seq[k].gate = (uint8_t)(40 + mrnd() % 50);
+            }
+        } else if (r < 30u && P.seq[k].on) {
+            P.seq[k].vel = (uint8_t)clamp((int32_t)P.seq[k].vel + (int32_t)(mrnd() % 21) - 10, 8, 127);
+        }
+    }
+}
+
 /* ----------------------------------------------------------------- seq --- */
 static void seq_rel(void)
 {
@@ -1681,6 +1756,16 @@ static void seq_stop(void)
     seq_at = 0xFF;
 }
 
+static uint8_t seq_ch_voice[3];
+
+static void seq_chord_rel(void)
+{
+    int k;
+    for (k = 0; k < 3; k++)
+        if (V[seq_ch_voice[k]].active && V[seq_ch_voice[k]].stage != 0 && V[seq_ch_voice[k]].stage != 4)
+            V[seq_ch_voice[k]].stage = 4;
+}
+
 void app_seq_frame(uint32_t keys, uint32_t now)
 {
     static uint32_t next_at, off_at;
@@ -1690,7 +1775,7 @@ void app_seq_frame(uint32_t keys, uint32_t now)
 
     if (!P.seq_on) return;
     if (seq_at == 0xFF) { step = 0; next_at = now; off_at = 0; seq_at = 0; }
-    if (off_at && now >= off_at) { seq_rel(); off_at = 0; }
+    if (off_at && now >= off_at) { seq_rel(); if (P.chord) seq_chord_rel(); off_at = 0; }
     if (now >= next_at) {
         seqstep_t *st = &P.seq[step];
         uint8_t root = 48;
@@ -1698,8 +1783,22 @@ void app_seq_frame(uint32_t keys, uint32_t now)
             if (keys & (1u << i)) { root = (uint8_t)(53 + i); break; }
         seq_rel();
         if (st->on) {
+            const int8_t *sc = SCALE_STEPS[P.scale & 3];
+            int third = P.chord ? sc[2] : 0;
+            int fifth = P.chord ? sc[4] : 0;
             seq_voice = (uint8_t)((seq_voice + 1) % NV);
             voice_start(&V[seq_voice], (uint8_t)(root + st->note), (float)st->vel / 127.0f);
+            if (P.chord) {
+                seq_ch_voice[0] = seq_voice;
+                seq_ch_voice[1] = (uint8_t)((seq_voice + 1) % NV);
+                seq_ch_voice[2] = (uint8_t)((seq_voice + 2) % NV);
+                voice_start(&V[seq_ch_voice[1]], (uint8_t)(root + st->note + third), (float)st->vel / 127.0f);
+                voice_start(&V[seq_ch_voice[2]], (uint8_t)(root + st->note + fifth), (float)st->vel / 127.0f);
+                seq_voice = seq_ch_voice[2];
+            } else {
+                seq_ch_voice[0] = seq_voice;
+                seq_ch_voice[1] = seq_ch_voice[2] = seq_voice;
+            }
             off_at = now + ms * (uint32_t)fm_clampf((float)st->gate, 5.0f, 95.0f) / 100u;
         }
         next_at = now + ms;
@@ -1809,10 +1908,24 @@ void app_frame(void)
                     osd_kind = 0;
                     break;
                 }
+                case B_REC:
+                    if (page == PAGE_SEQ) {
+                        P.chord = (uint8_t)!P.chord;
+                        osd_kind = 11; osd_until = now + 900u;
+                    }
+                    break;
                 case B_GLO: {
-                    route_t *R = &P.route[route_sel];
-                    R->on = (uint8_t)!R->on;
-                    if (R->on && R->src == SRC_OFF) { R->src = SRC_ENV2; R->dst = DST_CUT; R->amt = 0.30f; }
+                    if (page == PAGE_MOTIF) {
+                        motif_mutate();
+                        osd_kind = 12; osd_until = now + 900u;
+                        anim_start(ANIM_SWEEP, now);
+                        break;
+                    }
+                    {
+                        route_t *R = &P.route[route_sel];
+                        R->on = (uint8_t)!R->on;
+                        if (R->on && R->src == SRC_OFF) { R->src = SRC_ENV2; R->dst = DST_CUT; R->amt = 0.30f; }
+                    }
                     break;
                 }
                 case B_ARP:
@@ -1890,6 +2003,11 @@ void app_frame(void)
                     break;
                 case B_REC: {
                     static uint32_t last_tap;
+                    if (page == PAGE_MOTIF) {
+                        P.motif_mode = (uint8_t)!P.motif_mode;
+                        osd_kind = 10; osd_until = now + 900u;
+                        break;
+                    }
                     if (last_tap && now - last_tap < 2000u) {
                         uint32_t ms = now - last_tap;
                         int32_t bpm = (int32_t)(60000u / (ms ? ms : 1u));
@@ -1960,8 +2078,13 @@ void app_frame(void)
             seq_sel = (uint8_t)((seq_sel + (d > 0 ? 1 : 15)) & 15);
             break;
         case PAGE_MOTIF:
-            P.genre = (uint8_t)((P.genre + (d > 0 ? 1 : 5)) % 6);
-            motif_generate();
+            if (P.motif_mode == 0) {
+                P.genre = (uint8_t)((P.genre + (d > 0 ? 1 : 5)) % 6);
+                motif_generate();
+            } else {
+                P.e_steps = (uint8_t)clamp((int32_t)P.e_steps + (d > 0 ? 1 : -1), 2, 16);
+                euclid_generate();
+            }
             break;
         default:
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 31)) % 32));
@@ -2007,8 +2130,13 @@ void app_frame(void)
             break;
         }
         case PAGE_MOTIF:
-            P.density = (uint8_t)clamp((int32_t)P.density + (d > 0 ? 1 : -1), 1, 16);
-            motif_generate();
+            if (P.motif_mode == 0) {
+                P.density = (uint8_t)clamp((int32_t)P.density + (d > 0 ? 1 : -1), 1, 16);
+                motif_generate();
+            } else {
+                P.e_hits = (uint8_t)clamp((int32_t)P.e_hits + (d > 0 ? 1 : -1), 1, P.e_steps);
+                euclid_generate();
+            }
             break;
         default:
             slot_pick(d > 0 ? 1 : -1);
@@ -2051,8 +2179,13 @@ void app_frame(void)
             break;
         }
         case PAGE_MOTIF:
-            P.scale = (uint8_t)((P.scale + (d > 0 ? 1 : 3)) & 3);
-            motif_generate();
+            if (P.motif_mode == 0) {
+                P.scale = (uint8_t)((P.scale + (d > 0 ? 1 : 3)) & 3);
+                motif_generate();
+            } else {
+                P.e_rot = (uint8_t)((P.e_rot + (d > 0 ? 1 : 15)) & 15);
+                euclid_generate();
+            }
             break;
         }
     }
@@ -2088,9 +2221,14 @@ void app_frame(void)
             break;
         }
         case PAGE_MOTIF:
-            P.seed = (uint16_t)((P.seed + (d > 0 ? 1 : 9999)) % 10000);
-            motif_generate();
-            anim_start(ANIM_SWEEP, now);
+            if (P.motif_mode == 0) {
+                P.seed = (uint16_t)((P.seed + (d > 0 ? 1 : 9999)) % 10000);
+                motif_generate();
+                anim_start(ANIM_SWEEP, now);
+            } else {
+                euclid_generate();
+                anim_start(ANIM_SWEEP, now);
+            }
             break;
         }
     }
@@ -2165,6 +2303,11 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "density")) { *got = P.density; return 1; }
     if (!strcmp(what, "seed")) { *got = P.seed; return 1; }
     if (!strcmp(what, "motif")) { motif_generate(); *got = 1; return 1; }
+    if (!strcmp(what, "mmode")) { *got = P.motif_mode; return 1; }
+    if (!strcmp(what, "esteps")) { *got = P.e_steps; return 1; }
+    if (!strcmp(what, "ehits")) { *got = P.e_hits; return 1; }
+    if (!strcmp(what, "chord")) { *got = P.chord; return 1; }
+    if (!strcmp(what, "mutate")) { motif_mutate(); *got = 1; return 1; }
     if (!strcmp(what, "motifon")) { int c = 0, k; for (k = 0; k < 16; k++) if (P.seq[k].on) c++; *got = c; return 1; }
     if (!strcmp(what, "seqstep")) { *got = seq_at; return 1; }
     if (!strcmp(what, "seqsel")) { *got = seq_sel; return 1; }

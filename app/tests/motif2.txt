@@ -1,0 +1,49 @@
+wait 300
+# MOTIF page: STYLE mode
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 7
+expect mmode 0
+# REC switches it to EUCLID
+tap REC
+wait 30
+expect mmode 1
+expect esteps 8
+turn K1 1
+wait 30
+expect esteps 9
+turn K2 1
+wait 30
+expect ehits 6
+turn K3 2
+wait 30
+turn K4 1
+wait 40
+shot euclid.png
+# and back
+tap REC
+wait 30
+expect mmode 0
+# GLO hold on MOTIF mutates the pattern
+press GLO
+wait 800
+release GLO
+wait 40
+shot mutate.png
+# chord on the SEQ page: hold REC
+tap HOME
+tap SEQ
+wait 30
+expect page 6
+press REC
+wait 800
+release REC
+wait 30
+expect chord 1
+shot chord.png
