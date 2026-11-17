@@ -66,6 +66,8 @@ typedef struct {
 static patch_t P;
 static uint8_t selected, page, preset_index, octave, fx_sel, env_sel, lfo_sel, route_sel;
 static uint8_t seq_voice, seq_sel, seq_at;
+static uint8_t osd_kind;
+static uint32_t osd_until;
 
 /* the eight patches */
 #define G(on_, ty, wv, tb, ft, tn, lv, pn, cu, rs, pw, mo, ra, ix, fb, co) \
@@ -1098,10 +1100,15 @@ static void draw(void)
     cv_begin(240, 30, C_BLACK);
     cv_text(8, 1, &FONT_B, "PLANT-1", C_WHITE);
     cv_text(8, 18, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
+    num_text(v, preset_index + 1);
+    cv_text(150, 18, &FONT_T, "P", C_DIM);
+    cv_text(157, 18, &FONT_T, v, C_GRAY);
+    cv_text(171, 18, &FONT_T, "/32", C_DIM);
+    num_text(v, selected + 1);
+    cv_text(199, 18, &FONT_T, "G", C_DIM);
+    cv_text(207, 18, &FONT_T, v, C_GRAY);
     note_text(t, n);
     cv_text(198 - text_w(&FONT_B, t), 1, &FONT_B, t, n >= 0 ? C_HI : C_DIM);
-    num_text(v, voices);
-    cv_text(214, 18, &FONT_T, v, C_DIM);
     cv_blit(0, 0);
 
     /* the four slots: shape, type, filter, level */
@@ -1281,6 +1288,26 @@ static void draw(void)
         }
     }
     cv_blit(0, 222);
+
+    /* what the last encoder did, for a moment: PRESET / SELECT / ALGO */
+    if (osd_kind && plat_ms() < osd_until) {
+        cv_begin(240, 16, C_BLACK);
+        if (osd_kind == 1) {
+            num_text(v, preset_index + 1);
+            cv_text(8, 3, &FONT_T, "PRESET", C_HI);
+            cv_text(58, 3, &FONT_T, v, C_WHITE);
+            cv_text(84, 3, &FONT_T, PRESET_NAME[preset_index], C_GRAY);
+        } else if (osd_kind == 2) {
+            num_text(v, selected + 1);
+            cv_text(8, 3, &FONT_T, "SELECT", C_HI);
+            cv_text(56, 3, &FONT_T, "G", C_GRAY);
+            cv_text(64, 3, &FONT_T, v, C_WHITE);
+        } else {
+            cv_text(8, 3, &FONT_T, "ALGO", C_HI);
+            cv_text(46, 3, &FONT_T, PAGE_NAME[page], C_WHITE);
+        }
+        cv_blit(0, 206);
+    }
 }
 
 static void key_edges(uint32_t keys)
@@ -1570,17 +1597,23 @@ void app_frame(void)
         preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 31)) % 32));
         arp_reset();
         anim_start(ANIM_SWEEP, now);
+        osd_kind = 1; osd_until = now + 1100u;
     }
     d = plat_enc(EN_SELECT);
-    if (d) selected = (uint8_t)((selected + (d > 0 ? 1 : NGEN - 1)) % NGEN);
+    if (d) {
+        selected = (uint8_t)((selected + (d > 0 ? 1 : NGEN - 1)) % NGEN);
+        osd_kind = 2; osd_until = now + 1100u;
+    }
     d = plat_enc(EN_ALGO);
     if (d) {
         page = (uint8_t)((page + (d > 0 ? 1 : NPAGES - 1)) % NPAGES);
         anim_start(ANIM_BLINK, now);
+        osd_kind = 3; osd_until = now + 1100u;
     }
 
     d = plat_enc(EN_K1);
     if (d) {
+        osd_kind = 0;
         switch (page) {
         case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
