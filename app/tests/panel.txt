@@ -1,0 +1,37 @@
+wait 300
+# the three encoders that used to do nothing
+expect preset 0
+turn PRESET 1
+wait 30
+expect preset 1
+turn SELECT 1
+wait 30
+expect sel 1
+expect page 0
+turn ALGO 1
+wait 30
+expect page 1
+# the page buttons jump to their page
+tap FX
+wait 30
+expect page 4
+tap ENV
+wait 30
+expect page 1
+tap LFO
+wait 30
+expect page 2
+tap GLO
+wait 30
+expect page 3
+tap HOME
+wait 30
+expect page 0
+# and toggle when already there
+tap FX
+wait 30
+expect page 4
+tap FX
+wait 30
+expect page 4
+shot fx.png

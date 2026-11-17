@@ -4,50 +4,64 @@ The FM-1 side of [PLANT-1](https://github.com/kong8la/plant1), the browser synth
 This repository builds a real `.fwsc` package you can flash with
 [the PLANT-1 flash page](https://kong8la.com/plant1/flash/).
 
+## M8: the panel, wired to the sound
+
+![M8 on the screen](docs/m7.png)
+
+Every button does its label; pressing a page button twice toggles that page's switch.
+
+| Button | Does |
+| --- | --- |
+| FX | jump to FX, then toggle the selected effect |
+| SEL | next generator slot |
+| ENV | jump to ENV, then toggle AMP / MOD |
+| LFO | jump to LFO, then toggle LFO1 / LFO2 |
+| EDIT | next page |
+| GLO | jump to MOD, then toggle the selected route |
+| HOME | back to GEN and stop everything |
+| SAVE | store the patch in the current flash slot |
+| ARP | jump to ARP, then start/stop the arp |
+| SEQ | jump to SEQ, then start/stop the sequencer |
+| PLAY | transport: start the sequencer, or stop whatever runs |
+| REC | tap tempo (press twice) |
+| OCT+ / OCT- | transpose |
+
+All seven encoders work: **PRESET** steps the 32 presets, **SELECT** the slot, **ALGO** the page,
+and **K1-K4** edit the current page's four values.
+
+Voices are declicked when a slot is reused (their envelope and filter state are kept), and the
+output is soft-saturated, so the sequencer and the arp do not click or clip.
+
+## M7: a sixteen-step sequencer
+
+- 16 steps, each with note above the held key, velocity, gate and on/off
+- SEQ runs it, PLAY taps tempo; the SEQ page edits step / note / velocity / gate
+
 ## M6: thirty-two presets
 
-![M6 on the screen](docs/m6.png)
-
-Four banks of eight, each with its own generators, envelopes, effects and matrix:
-
-| Bank | Presets |
-| --- | --- |
-| **BELLS** | INIT, GLASS BELL, MUSIC BOX, VIBES, CELESTA, TUBULAR, HARP, ICE BELL |
-| **BASS** | FM BASS, SUB BASS, ACID, REESE, GROWL, WUB, PLUCK BASS, SQUARE BASS |
-| **LEAD** | SUPER SAW, HOOVER, METAL, SYNC, FLUTE, WHISTLE, SOLO, BUZZ |
-| **PADS** | PHASE PAD, DARK CHOIR, SWEEP, STRINGS, DRONE, WASH, GLASS PAD, NOISE PAD |
-
-On PATCH: `K1` steps a preset, `K3` jumps a bank, `K2` picks one of the four flash slots, `SAVE`
-stores the current sound there.
+Four banks of eight: BELLS, BASS, LEAD, PADS. PATCH page: K1 steps, K3 jumps a bank, K2 picks a
+flash slot, SAVE stores.
 
 ## M5: an arpeggiator
 
-- patterns UP, DOWN, UPDN, RAND; rates 1/4 to 1/16T; 1-3 octaves; gate 5-95 %
-- tap tempo on SEQ (60-200 BPM), the ARP page shows it
-- ARP toggles it from any page; held keys are the arp's note pool
+Patterns UP / DOWN / UPDN / RAND, rates 1/4 to 1/16T, 1-3 octaves, gate, tap tempo.
 
 ## M4: a modulation matrix
 
-- four routes: ENV1 / ENV2 / LFO1 / LFO2 / velocity to any slot's level, cutoff or pitch
-- the MOD page (K1 route, K2 source, K3 destination, K4 depth, GLO toggles)
-- ENV toggles AMP/MOD, LFO toggles LFO1/LFO2
+Four routes: ENV1 / ENV2 / LFO1 / LFO2 / velocity to any slot's level, cutoff or pitch.
 
 ## M3: an effect chain
 
-- five effect slots: DRIVE, CHORUS, DELAY (139 ms), REVERB, COMP
-- an FX page (K1 walks the chain, K2-K4 edit A/B/C, FX toggles)
-- four patch slots in flash
+DRIVE, CHORUS, DELAY (139 ms), REVERB, COMP, with an FX page and four flash patch slots.
 
 ## M2: envelopes and LFOs
 
-- ENV page with the curve drawn, LFO page with its shape, patch storage
-- a screen that draws each slot's waveform, the envelope and the LFO
+Two envelopes with their curves, two LFOs with their shapes, patch storage.
 
 ## M1: four generators on the device
 
-- 4 generator slots: analog (saw/square/pulse/sine, polyBLEP), wavetable (4 tables, 2 frames,
-  morph), FM (ratio/index/feedback), noise (white to pink)
-- a TPT state-variable filter per slot (LP/HP/BP/notch), unison 1-3, six voices
+Analog (saw/square/pulse/sine), wavetable (4 tables, 2 frames, morph), FM (ratio/index/feedback),
+noise; a TPT filter per slot, unison 1-3, six voices.
 
 ## Build
 
@@ -60,11 +74,10 @@ Local host simulator (any OS, plain `cc`):
 
 ```bash
 ./build.sh --host
-app/build/host/plant1m6_host app/tests/basic.txt app/build/host
-app/build/host/plant1m6_host app/tests/presets.txt app/build/host
-app/build/host/plant1m6_host app/tests/arp.txt app/build/host
-app/build/host/plant1m6_host app/tests/mod.txt app/build/host
-app/build/host/plant1m6_host app/tests/fx.txt app/build/host
+app/build/host/plant1m8_host app/tests/panel.txt app/build/host
+app/build/host/plant1m8_host app/tests/seq.txt app/build/host
+app/build/host/plant1m8_host app/tests/arp.txt app/build/host
+app/build/host/plant1m8_host app/tests/presets.txt app/build/host
 ```
 
 The device build needs a Linux host (the toolchain is Linux x86-64 only); `build.sh` and the
@@ -76,29 +89,17 @@ Actions workflow are the two supported ways.
 2. Open <https://kong8la.com/plant1/flash/> in desktop Chrome or Edge.
 3. The page loads the current build by itself; connect the FM-1 over USB and press Install.
 
-The package identity is `FM-1_9600` for M6. The flash page checks the package's SHA-256, its
-identity and that it carries the update loader before anything is written.
+The package identity is `FM-1_9800` for M8.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `app/app.c`, `app/app.h` | the app: engine, presets, modulation, arp, effects, panel, screen, storage |
+| `app/app.c`, `app/app.h` | the app: engine, presets, modulation, arp, seq, effects, panel, screen, storage |
 | `app/fm1.toml` | name, package identity, USB names, licence |
-| `app/tests/*.txt` | the host simulator checks (basic, presets, arp, mod, fx, leds, audio) |
+| `app/tests/*.txt` | the host simulator checks (panel, basic, seq, arp, mod, fx, presets, leds, audio) |
 | `build.sh` | fetches fm1-base at a pinned commit, runs its `tools/build.py` |
 | `test.sh` | the host simulator checks, run by CI |
-
-## Roadmap
-
-- **M0**: one FM voice, ADSR, keys, screen, the build/flash chain proven
-- **M1**: 4 generator slots, per-slot filter, unison, 6 voices, panel pages
-- **M2**: envelopes with the curve, an LFO, patch storage, a screen that shows the sound
-- **M3**: 5-slot effects, an FX page, four flash patch slots
-- **M4**: a modulation matrix
-- **M5**: an arpeggiator with tap tempo
-- **M6** (this): thirty-two presets in four banks
-- **M7**: MIDI CC mapping, a step sequencer
 
 ## Licences
 

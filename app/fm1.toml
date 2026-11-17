@@ -1,15 +1,15 @@
-# PLANT-1 M7 build settings (tools/build.py)
-name = "PLANT1M7"
-id_prefix = "FM-1_97"          # dev identity FM-1_9700
+# PLANT-1 M8 build settings (tools/build.py)
+name = "PLANT1M8"
+id_prefix = "FM-1_98"          # dev identity FM-1_9800
 usb_manufacturer = "PLANT-1"
-usb_product = "PLANT1 M7 FM-1"
+usb_product = "PLANT1 M8 FM-1"
 o2 = []
 words = "words.tsv"
 ble = false
 licence = "MIT"
-tagline = "PLANT-1 M7: a step sequencer on the FM-1"
+tagline = "PLANT-1 M8: the panel wired to the sound"
 repo = "https://github.com/kong8la/plant1-fw"
 author = "kong8la"
-description = "PLANT-1 M7: a sixteen-step sequencer (note, velocity, gate, on/off per step, played from the held key), plus thirty-two presets in four banks, an arpeggiator, a modulation matrix, five effects, two envelopes, two LFOs, four generator slots and four flash patch slots."
+description = "PLANT-1 M8: every button jumps to its page (and toggles that page's switch when already there), all seven encoders do something, voices are declicked on reuse, and the output is soft-saturated. On top of M7's sequencer, M6's 32 presets, M5's arp, M4's matrix, M3's effects and M1's engines."
 tags = ["synth"]
 credits = "built on fm1-base"

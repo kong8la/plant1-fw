@@ -4,4 +4,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 python3 base/tools/build.py "$PWD/app" --host
-"$PWD/app/build/host/plant1m7_host" "$PWD/app/tests/basic.txt" "$PWD/app/build/host"
+"$PWD/app/build/host/plant1m8_host" "$PWD/app/tests/basic.txt" "$PWD/app/build/host"

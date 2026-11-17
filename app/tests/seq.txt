@@ -1,6 +1,9 @@
 wait 300
-# SEQ runs the 16 steps
+# SEQ: the button jumps to the page, a second press starts the sequence
 expect seq 0
+tap SEQ
+wait 30
+expect page 6
 tap SEQ
 wait 40
 expect seq 1
@@ -9,14 +12,9 @@ wait 300
 tap SEQ
 wait 30
 expect seq 0
-# the SEQ page: step, note, velocity, gate
+# the SEQ page: step, note
 tap HOME
-tap EDIT
-tap EDIT
-tap EDIT
-tap EDIT
-tap EDIT
-tap EDIT
+tap SEQ
 wait 30
 expect page 6
 expect seqsel 0
@@ -27,9 +25,10 @@ turn K1 3
 wait 30
 expect seqsel 3
 shot seq.png
-# run it again from the top
-tap SEQ
-wait 60
+# PLAY starts the transport from anywhere
+tap PLAY
+wait 40
 expect seq 1
-wait 300
-tap SEQ
+tap PLAY
+wait 30
+expect seq 0

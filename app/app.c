@@ -730,12 +730,13 @@ static float lfo_shape(uint8_t s, float ph)
 static void voice_start(voice_t *v, uint8_t note, float vel)
 {
     int g, u, i;
+    uint8_t was = v->active;
     v->active = 1;
     v->note = note;
     v->vel = vel;
     v->target = (float)note + (float)octave * 12.0f;
     v->freq = v->target;
-    v->env = 0.0f;
+    if (v->env < 0.02f) v->env = 0.0f;      /* a reused voice keeps its level: no click */
     v->stage = 1;
     v->lfo_ph = 0.0f;
     v->lfo2_ph = 0.0f;
@@ -750,7 +751,7 @@ static void voice_start(voice_t *v, uint8_t note, float vel)
         v->mphase[g] = 0.0f;
         v->fbprev[g] = 0.0f;
         v->pink[g] = 0.0f;
-        v->filt[g].ic1 = v->filt[g].ic2 = 0.0f;
+        if (!was) v->filt[g].ic1 = v->filt[g].ic2 = 0.0f;
     }
 }
 
@@ -891,6 +892,8 @@ void app_render(int32_t *lr, uint32_t n, uint32_t master_q12)
             R += sr * e * vv->vel * 0.22f * trem;
         }
         fx_run(&L, &R);
+        L = fm_tanhf(L * 0.9f) * 0.98f;
+        R = fm_tanhf(R * 0.9f) * 0.98f;
         lr[2 * i] = (int32_t)(L * gain);
         lr[2 * i + 1] = (int32_t)(R * gain);
     }
@@ -1466,24 +1469,68 @@ void app_frame(void)
     else key_edges(keys);
     plat_lights(0, keys, 0, 0, 1);
 
-    if (pressed & (1u << B_SEL)) selected = (uint8_t)((selected + 1) % NGEN);
-    if (pressed & (1u << B_EDIT)) { page = (uint8_t)((page + 1) % NPAGES); anim_start(ANIM_BLINK, now); }
-    if (pressed & (1u << B_HOME)) { page = PAGE_GEN; selected = 0; anim_start(ANIM_BLINK, now); }
+    /* page buttons jump to their page, and toggle that page's switch when already there */
+    if (pressed & (1u << B_FX)) {
+        if (page == PAGE_FX) {
+            fx_t *F = &P.fx[fx_sel];
+            F->on = (uint8_t)!F->on;
+            if (F->on && F->type == FX_OFF) F->type = FX_DRIVE;
+        } else { page = PAGE_FX; anim_start(ANIM_BLINK, now); }
+    }
+    if (pressed & (1u << B_ENV)) {
+        if (page == PAGE_ENV) env_sel = (uint8_t)!env_sel;
+        else { page = PAGE_ENV; anim_start(ANIM_BLINK, now); }
+    }
+    if (pressed & (1u << B_LFO)) {
+        if (page == PAGE_LFO) lfo_sel = (uint8_t)!lfo_sel;
+        else { page = PAGE_LFO; anim_start(ANIM_BLINK, now); }
+    }
+    if (pressed & (1u << B_GLO)) {
+        if (page == PAGE_MOD) {
+            route_t *R = &P.route[route_sel];
+            R->on = (uint8_t)!R->on;
+            if (R->on && R->src == SRC_OFF) { R->src = SRC_ENV2; R->dst = DST_CUT; R->amt = 0.30f; }
+        } else { page = PAGE_MOD; anim_start(ANIM_BLINK, now); }
+    }
+    if (pressed & (1u << B_ARP)) {
+        if (page == PAGE_ARP) {
+            P.arp_on = (uint8_t)!P.arp_on;
+            if (!P.arp_on) arp_reset();
+            else { P.seq_on = 0; seq_stop(); }
+        } else { page = PAGE_ARP; anim_start(ANIM_BLINK, now); }
+    }
+    if (pressed & (1u << B_SEQ)) {
+        if (page == PAGE_SEQ) {
+            P.seq_on = (uint8_t)!P.seq_on;
+            if (P.seq_on) { P.arp_on = 0; arp_reset(); seq_stop(); }
+            else seq_stop();
+        } else { page = PAGE_SEQ; anim_start(ANIM_BLINK, now); }
+    }
+    if (pressed & (1u << B_PLAY)) {
+        if (P.seq_on || P.arp_on) { P.seq_on = 0; P.arp_on = 0; seq_stop(); arp_reset(); }
+        else { P.seq_on = 1; P.arp_on = 0; seq_stop(); }
+        anim_start(ANIM_BLINK, now);
+    }
+    if (pressed & (1u << B_SEL)) {
+        selected = (uint8_t)((selected + 1) % NGEN);
+        if (page != PAGE_GEN) { page = PAGE_GEN; }
+        anim_start(ANIM_BLINK, now);
+    }
+    if (pressed & (1u << B_EDIT)) {
+        page = (uint8_t)((page + 1) % NPAGES);
+        anim_start(ANIM_BLINK, now);
+    }
+    if (pressed & (1u << B_HOME)) {
+        page = PAGE_GEN;
+        selected = 0;
+        P.seq_on = 0; P.arp_on = 0;
+        seq_stop(); arp_reset();
+        anim_start(ANIM_BLINK, now);
+    }
     if (pressed & (1u << B_OCTUP)) { if (octave < 2) octave++; }
     if (pressed & (1u << B_OCTDN)) { if (octave > -2) octave--; }
     if (pressed & (1u << B_SAVE)) { patch_save(); anim_start(ANIM_SWEEP, now); }
-    if (pressed & (1u << B_ARP)) {
-        P.arp_on = (uint8_t)!P.arp_on;
-        if (!P.arp_on) arp_reset();
-        anim_start(ANIM_BLINK, now);
-    }
-    if (pressed & (1u << B_SEQ)) {
-        P.seq_on = (uint8_t)!P.seq_on;
-        if (P.seq_on) { P.arp_on = 0; arp_reset(); seq_stop(); }
-        else seq_stop();
-        anim_start(ANIM_BLINK, now);
-    }
-    if (pressed & (1u << B_PLAY)) {
+    if (pressed & (1u << B_REC)) {
         static uint32_t last_tap;
         if (last_tap && now - last_tap < 2000u) {
             uint32_t ms = now - last_tap;
@@ -1493,17 +1540,19 @@ void app_frame(void)
         }
         last_tap = now;
     }
-    if ((pressed & (1u << B_ENV)) && page == PAGE_ENV) env_sel = (uint8_t)!env_sel;
-    if ((pressed & (1u << B_LFO)) && page == PAGE_LFO) lfo_sel = (uint8_t)!lfo_sel;
-    if ((pressed & (1u << B_FX)) && page == PAGE_FX) {
-        fx_t *F = &P.fx[fx_sel];
-        F->on = (uint8_t)!F->on;
-        if (F->on && F->type == FX_OFF) F->type = FX_DRIVE;
+
+    d = plat_enc(EN_PRESET);
+    if (d) {
+        preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 31)) % 32));
+        arp_reset();
+        anim_start(ANIM_SWEEP, now);
     }
-    if ((pressed & (1u << B_GLO)) && page == PAGE_MOD) {
-        route_t *R = &P.route[route_sel];
-        R->on = (uint8_t)!R->on;
-        if (R->on && R->src == SRC_OFF) { R->src = SRC_ENV2; R->dst = DST_CUT; R->amt = 0.30f; }
+    d = plat_enc(EN_SELECT);
+    if (d) selected = (uint8_t)((selected + (d > 0 ? 1 : NGEN - 1)) % NGEN);
+    d = plat_enc(EN_ALGO);
+    if (d) {
+        page = (uint8_t)((page + (d > 0 ? 1 : NPAGES - 1)) % NPAGES);
+        anim_start(ANIM_BLINK, now);
     }
 
     d = plat_enc(EN_K1);
@@ -1538,6 +1587,7 @@ void app_frame(void)
             break;
         default:
             preset_load((uint8_t)((preset_index + (d > 0 ? 1 : 31)) % 32));
+            arp_reset();
             anim_start(ANIM_SWEEP, now);
             break;
         }
