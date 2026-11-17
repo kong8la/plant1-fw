@@ -1264,24 +1264,63 @@ static uint32_t mrnd(void);
 /* a tree grows out of the ground, then the name, then a splash line: the shrub boot, in our palette */
 static void boot_branch(int32_t x, int32_t y, float ang, float len, int depth, float grow)
 {
-    float reach = 1.6f - (float)depth * 0.28f;
+    float reach = 1.7f - (float)depth * 0.22f;
     float k = grow * reach;
     int32_t x1, y1;
+    uint16_t c = depth == 0 ? C_HI : (depth == 1 ? C_WHITE : C_GRAY);
     if (k > 1.0f) k = 1.0f;
     if (k <= 0.0f) return;
     x1 = x + (int32_t)(fm_cosf(ang) * len * k);
     y1 = y + (int32_t)(fm_sinf(ang) * len * k);
-    draw_line(x, y, x1, y1, depth == 0 ? C_HI : (depth == 1 ? C_WHITE : C_GRAY));
+    if (depth == 0) {                        /* a soft halo behind the trunk */
+        draw_line(x - 1, y, x1 - 1, y1, RGB(18, 44, 56));
+        draw_line(x + 1, y, x1 + 1, y1, RGB(18, 44, 56));
+    }
+    draw_line(x, y, x1, y1, c);
     if (k < 0.99f) return;
-    if (depth >= 3) {
+    if (depth >= 4) {
         cv_rect(x1 - 1, y1 - 1, 3, 3, C_HI);
+        if ((mrnd() & 1u) != 0u) cv_rect(x1, y1 - 3, 1, 2, C_WHITE);
         return;
     }
     {
-        float a = 0.50f + 0.22f * (float)(mrnd() % 100) / 100.0f;
-        float l = len * (0.62f + 0.10f * (float)(mrnd() % 100) / 100.0f);
+        float a = 0.46f + 0.24f * (float)(mrnd() % 100) / 100.0f;
+        float l = len * (0.66f + 0.10f * (float)(mrnd() % 100) / 100.0f);
         boot_branch(x1, y1, ang - a, l, depth + 1, grow);
         boot_branch(x1, y1, ang + a, l, depth + 1, grow);
+    }
+}
+
+static void boot_roots(float g)
+{
+    int i;
+    for (i = 0; i < 3; i++) {
+        int32_t x = 112 + i * 8;
+        int32_t len = (int32_t)(10.0f * g) + 2;
+        draw_line(x, 137, x - 4 + i * 4, 137 + len, RGB(22, 34, 40));
+    }
+}
+
+static void boot_pollen(uint32_t dt)
+{
+    int i;
+    for (i = 0; i < 9; i++) {
+        int32_t y = 190 - (int32_t)((dt / 10u + (uint32_t)(i * 37)) % 150u);
+        int32_t x = 30 + (i * 23 + (int32_t)(fm_sinf((float)dt * 0.003f + (float)i) * 12.0f)) % 180;
+        if (x < 4) x = 4;
+        cv_rect(x, y, 1, 1, (i & 1) ? C_DIM : C_GRAY);
+    }
+}
+
+static void boot_ring(uint32_t dt)
+{
+    int32_t i;
+    for (i = 0; i < 20; i++) {
+        float a = (float)i / 20.0f * 6.2831853f - 1.5708f;
+        int32_t on = (uint32_t)i * 20u < (dt % 1200u) / 3u;
+        int32_t x = 120 + (int32_t)(fm_cosf(a) * 9.0f);
+        int32_t y = 224 + (int32_t)(fm_sinf(a) * 9.0f);
+        cv_rect(x, y, 2, 2, on ? C_HI : RGB(22, 31, 40));
     }
 }
 
@@ -1297,8 +1336,10 @@ static void draw_boot(uint32_t dt)
 
     /* the tree, in the upper band (the canvas is shorter than the screen) */
     cv_begin(240, 140, C_BLACK);
-    cv_rect(58, 136, 124, 1, RGB(26, 36, 48));
+    cv_rect(58, 136, 124, 1, RGB(30, 42, 54));
+    boot_roots(g);
     boot_branch(120, 134, -1.5708f, 40.0f, 0, g);
+    boot_pollen(dt);
     cv_blit(0, 0);
 
     /* the name, the splash line and the dots below it */
@@ -1327,10 +1368,7 @@ static void draw_boot(uint32_t dt)
             cv_text(x0 + i * 8, 66 + (int32_t)(bob + (i & 1 ? 1 : 0)), &FONT_B, c, C_AMB);
         }
     }
-    for (i = 0; i < 3; i++) {
-        int32_t on = (dt / 200u) > (uint32_t)i;
-        cv_rect(104 + i * 14, 88, 6, 3, on ? C_HI : RGB(26, 36, 48));
-    }
+    boot_ring(dt);
     cv_blit(0, 140);
 }
 static void draw(void)
@@ -2386,6 +2424,21 @@ void app_frame(void)
 
     lights_frame(keys, pressed, now);
     draw();
+}
+
+/* the first screen: the ground and a seed, so the tree can grow out of it */
+void app_splash(void)
+{
+    lcd_fill(0, 0, 240, 240, C_BLACK);
+    cv_begin(240, 140, C_BLACK);
+    cv_rect(58, 136, 124, 1, RGB(26, 36, 48));
+    cv_rect(118, 132, 5, 4, C_HI);
+    cv_rect(116, 130, 9, 1, C_DIM);
+    cv_blit(0, 0);
+    cv_begin(240, 100, C_BLACK);
+    cv_text(78, 30, &FONT_T, "PLANT-1", C_DIM);
+    cv_blit(0, 140);
+    lcd_sync();
 }
 
 void app_ui_init(void) { lcd_fill(0, 0, 240, 240, C_BLACK); }
