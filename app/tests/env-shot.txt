@@ -1,0 +1,11 @@
+wait 300
+tap ENV
+wait 40
+shot env-init.png
+turn PRESET 1
+wait 40
+shot env-bell.png
+turn PRESET 22
+wait 40
+shot env-pad.png
+tap HOME

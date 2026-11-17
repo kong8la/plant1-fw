@@ -1126,26 +1126,47 @@ static void draw_slot_wave(int32_t x, int32_t y, int32_t w, int32_t h, int g, ui
 
 static void draw_env_graph(int32_t x, int32_t y, int32_t w, int32_t h, float a, float d, float s, float r)
 {
-    float total = a + d + r + 120.0f;
-    int32_t xa = x + (int32_t)((float)w * a / total);
-    int32_t xd = xa + (int32_t)((float)w * d / total);
-    int32_t xs = xd + (int32_t)((float)w * 0.18f);
-    int32_t xr = x + w - 2;
-    int32_t i;
+    float total, fa, fd, fs;
+    int32_t xa, xd, xs, xr, i;
+
     if (a < 1.0f) a = 1.0f;
-    cv_rect(x, y, w, 1, C_LINE);
-    cv_rect(x, y, 1, h, C_LINE);
-    for (i = x; i <= xa; i++)
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * (float)(i - x) / (float)(xa - x + 1)), 1, 1, C_HI);
-    for (i = xa; i <= xd; i++) {
-        float k = (float)(i - xa) / (float)(xd - xa + 1);
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * (1.0f - (1.0f - s) * (1.0f - fm_exp2f(-4.0f * k)))), 1, 1, C_HI);
+    if (d < 1.0f) d = 1.0f;
+    if (r < 1.0f) r = 1.0f;
+    if (s < 0.0f) s = 0.0f;
+    if (s > 1.0f) s = 1.0f;
+    total = (a + d + r) * 1.35f;               /* the sounding part gets a third of the width */
+    fa = a / total;
+    fd = (a + d) / total;
+    fs = (a + d + (a + d + r) * 0.35f) / total;
+    xr = x + w - 2;
+    xa = x + (int32_t)((float)w * fa);
+    xd = x + (int32_t)((float)w * fd);
+    xs = x + (int32_t)((float)w * fs);
+    if (xa < x + 2) xa = x + 2;
+    if (xd < xa + 2) xd = xa + 2;
+    if (xs < xd + 4) xs = xd + 4;
+    if (xs > xr - 2) xs = xr - 2;
+    if (xd > xs - 2) xd = xs - 2;
+    if (xa > xd - 2) xa = xd - 2;
+
+    cv_rect(x, y + h - 1, w, 1, RGB(24, 33, 43));     /* the floor */
+    cv_rect(x, y, 1, h, RGB(24, 33, 43));
+
+    for (i = x; i <= xa; i++) {                        /* attack: 0 -> 1 */
+        float k = (float)(i - x) / (float)(xa - x + 1);
+        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * k), 1, 1, C_HI);
     }
-    for (i = xd; i <= xs; i++)
+    for (i = xa; i <= xd; i++) {                       /* decay: 1 -> s */
+        float k = (float)(i - xa) / (float)(xd - xa + 1);
+        float v = s + (1.0f - s) * fm_exp2f(-4.0f * k);
+        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * v), 1, 1, C_HI);
+    }
+    for (i = xd; i <= xs; i++)                         /* sustain */
         cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * s), 1, 1, C_HI);
-    for (i = xs; i <= xr; i++) {
+    for (i = xs; i <= xr; i++) {                       /* release: s -> 0 */
         float k = (float)(i - xs) / (float)(xr - xs + 1);
-        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * s * (1.0f - fm_exp2f(-4.0f * k))), 1, 1, C_HI);
+        float v = s * fm_exp2f(-4.0f * k);
+        cv_rect(i, y + h - 1 - (int32_t)((float)(h - 2) * v), 1, 1, C_HI);
     }
 }
 
