@@ -1,0 +1,34 @@
+wait 1300
+tap HOME
+wait 30
+expect page 0
+expect genmode 0
+# hold SEL: PARAMS -> CROSS FM -> LANE
+press SEL
+wait 800
+release SEL
+wait 40
+expect genmode 1
+press SEL
+wait 800
+release SEL
+wait 40
+expect genmode 2
+turn K1 1
+wait 30
+expect lanefx 1
+turn K2 5
+wait 30
+expect laneamt 25
+shot lane.png
+press SEL
+wait 800
+release SEL
+wait 40
+expect genmode 0
+# it still plays
+key 7 down
+wait 80
+expect voices 1
+key 7 up
+wait 200

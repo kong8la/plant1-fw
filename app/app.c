@@ -30,6 +30,8 @@ typedef struct {
     float pwm, morph, ratio, index, fb, color;
     uint8_t fm_src;                      /* 0 none, 1-4: that generator's output modulates this one */
     float fm_amt;
+    uint8_t lane_fx;                     /* 0 none, 1 drive, 2 crush, 3 fold */
+    float lane_amt;
 } gen_t;
 
 #define FX_MAX 5
@@ -905,6 +907,22 @@ static void voice_sample(voice_t *v, float *outL, float *outR)
         v->gout[g] = sumL - sumR;
         }
         if (P.uni > 1) { sumL *= 0.7071f; sumR *= 0.7071f; }
+        if (G->lane_fx) {                       /* this generator's own lane effect, per voice */
+            float mono = (sumL + sumR) * 0.5f;
+            float o = mono;
+            if (G->lane_fx == 1) {
+                float k = 1.0f + G->lane_amt * 9.0f;
+                o = mono * k / (1.0f + fm_fabsf(mono * k));
+            } else if (G->lane_fx == 2) {
+                float st = 0.02f + (1.0f - G->lane_amt) * 0.45f;
+                o = (float)((int)(mono / st)) * st;
+            } else {
+                float k = 1.0f + G->lane_amt * 5.0f;
+                o = fm_sinf(mono * k * 1.6f);
+            }
+            sumL += o - mono;
+            sumR += o - mono;
+        }
         if (G->ftype) {
             float mono = (sumL + sumR) * 0.5f;
             float f = svf_run(&v->filt[g], mono);
@@ -1470,12 +1488,29 @@ static void draw(void)
         char txt[8];
         int k;
 
-        cv_text(8, 1, &FONT_T, gen_mode ? "CROSS FM" : "GENERATORS", C_GRAY);
+        cv_text(8, 1, &FONT_T, gen_mode == 1 ? "CROSS FM" : gen_mode == 2 ? "LANE" : "GENERATORS", C_GRAY);
         num_text(v, selected + 1);
         cv_text(120, 1, &FONT_T, "G", C_DIM);
         cv_text(128, 1, &FONT_T, v, C_HI);
         cv_text(142, 1, &FONT_T, GEN_NAME[G->type], C_WHITE);
-        if (gen_mode) {
+        if (gen_mode == 2) {
+            int k2;
+            static const char *const LN[4] = {"NONE", "DRIVE", "CRUSH", "FOLD"};
+            for (k2 = 0; k2 < NGEN; k2++) {
+                gen_t *E = &P.gen[k2];
+                int32_t cx = (k2 & 1) ? 121 : 2;
+                int32_t cy = (k2 >> 1) ? 63 : 15;
+                draw_card(cx, cy, 117, 44, k2 == selected ? C_HI : RGB(22, 31, 40));
+                cv_text(cx + 6, cy + 4, &FONT_T, k2 == 0 ? "G1 LANE" : k2 == 1 ? "G2 LANE" : k2 == 2 ? "G3 LANE" : "G4 LANE", C_HI);
+                cv_text(cx + 6, cy + 17, &FONT_S, LN[E->lane_fx & 3], E->lane_fx ? C_WHITE : C_DIM);
+                num_text(txt, (int32_t)(E->lane_amt * 100.0f));
+                cv_text(cx + 78, cy + 17, &FONT_S, txt, E->lane_fx ? C_HI : C_DIM);
+                cv_rect(cx + 6, cy + 35, 100, 5, RGB(22, 31, 40));
+                cv_rect(cx + 6, cy + 35, (int32_t)(fm_clampf(E->lane_amt, 0.0f, 1.0f) * 100.0f), 5, E->lane_fx ? C_HI : C_DIM);
+            }
+            break;
+        }
+        if (gen_mode == 1) {
             int k2;
             for (k2 = 0; k2 < NGEN; k2++) {
                 gen_t *E = &P.gen[k2];
@@ -1769,7 +1804,8 @@ static void draw(void)
     {
         const char *kl[4];
         for (i = 0; i < 4; i++) kl[i] = K_LABEL[page][i];
-        if (page == PAGE_GEN && gen_mode) { kl[0] = "SRC"; kl[1] = "AMT"; kl[2] = "-"; kl[3] = "-"; }
+        if (page == PAGE_GEN && gen_mode == 1) { kl[0] = "SRC"; kl[1] = "AMT"; kl[2] = "-"; kl[3] = "-"; }
+        else if (page == PAGE_GEN && gen_mode == 2) { kl[0] = "LANE"; kl[1] = "AMT"; kl[2] = "-"; kl[3] = "-"; }
         else if (page == PAGE_MACRO) { kl[0] = "M1"; kl[1] = "M2"; kl[2] = "M3"; kl[3] = "M4"; }
         else if (page == PAGE_SEQ) {
             if (seq_mode == SEQ_SHAPE) { kl[0] = "STEP"; kl[1] = "RATCHET"; kl[2] = "PROB"; kl[3] = "TIE"; }
@@ -2276,7 +2312,7 @@ void app_frame(void)
                     break;
                 case B_SEL:
                     if (page == PAGE_GEN) {
-                        gen_mode = (uint8_t)!gen_mode;
+                        gen_mode = (uint8_t)((gen_mode + 1) % 3);
                         osd_kind = 13; osd_until = now + 900u;
                     }
                     break;
@@ -2427,7 +2463,8 @@ void app_frame(void)
                 G->type = (uint8_t)(((G->type - 1 + (d > 0 ? 1 : 3)) % 4) + 1);
                 G->on = 1;
                 G->ftype = G->ftype ? G->ftype : F_LP;
-            } else G->fm_src = (uint8_t)((G->fm_src + (d > 0 ? 1 : 4)) % 5);
+            } else if (gen_mode == 1) G->fm_src = (uint8_t)((G->fm_src + (d > 0 ? 1 : 4)) % 5);
+            else G->lane_fx = (uint8_t)((G->lane_fx + (d > 0 ? 1 : 3)) & 3);
             break;
         }
         case PAGE_ENV:
@@ -2479,7 +2516,8 @@ void app_frame(void)
         case PAGE_GEN: {
             gen_t *G = &P.gen[selected];
             if (gen_mode == 0) G->level = fm_clampf(G->level + (float)d * 0.02f, 0.0f, 1.0f);
-            else G->fm_amt = fm_clampf(G->fm_amt + (float)d * 0.05f, 0.0f, 2.0f);
+            else if (gen_mode == 1) G->fm_amt = fm_clampf(G->fm_amt + (float)d * 0.05f, 0.0f, 2.0f);
+            else G->lane_amt = fm_clampf(G->lane_amt + (float)d * 0.05f, 0.0f, 1.0f);
             break;
         }
         case PAGE_ENV:
@@ -2738,6 +2776,9 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "macro1")) { *got = (int32_t)(P.macro[0] * 100.0f); return 1; }
     if (!strcmp(what, "macro4")) { *got = (int32_t)(P.macro[3] * 100.0f); return 1; }
     if (!strcmp(what, "macsel")) { *got = macro_sel; return 1; }
+    if (!strcmp(what, "lanefx")) { *got = P.gen[selected].lane_fx; return 1; }
+    if (!strcmp(what, "laneamt")) { *got = (int32_t)(P.gen[selected].lane_amt * 100.0f); return 1; }
+    if (!strcmp(what, "genmode")) { *got = gen_mode; return 1; }
     if (!strcmp(what, "fmsrc")) { *got = P.gen[selected].fm_src; return 1; }
     if (!strcmp(what, "fmamt")) { *got = (int32_t)(P.gen[selected].fm_amt * 100.0f); return 1; }
     if (!strcmp(what, "route")) { *got = route_sel; return 1; }
