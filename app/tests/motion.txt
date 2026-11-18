@@ -1,0 +1,39 @@
+wait 1300
+# MACRO page is the eighth one
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 8
+expect motn 0
+# hold REC starts the recorder
+press REC
+wait 800
+release REC
+wait 30
+expect motrec 1
+# move the four macros over four bars
+turn K1 4
+wait 120
+turn K2 6
+wait 120
+turn K3 3
+wait 120
+turn K4 8
+wait 120
+# hold REC again to stop and play
+press REC
+wait 800
+release REC
+wait 30
+expect motrec 0
+expect moton 1
+shot motion.png
+# the lane plays by itself
+wait 600
+shot motion-play.png

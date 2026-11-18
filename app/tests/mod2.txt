@@ -20,15 +20,12 @@ tap EDIT
 tap EDIT
 wait 30
 expect page 8
-turn K2 4
+turn K1 4
 wait 30
 expect macro1 20
-turn K1 1
+turn K4 2
 wait 30
-expect macsel 1
-turn K2 2
-wait 30
-expect macro4 0
+expect macro4 10
 shot macro.png
 # cross-FM on the GEN page: hold SEL
 tap HOME

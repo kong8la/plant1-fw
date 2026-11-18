@@ -77,6 +77,14 @@ typedef struct {
     float fx_bal;
 } patch_t;
 
+#define MOT_MAX 64
+typedef struct { uint16_t t; uint8_t idx; float v; } motkey_t;
+motkey_t motion[MOT_MAX];
+uint8_t motion_n, motion_on;
+static uint8_t motion_rec;
+static uint32_t motion_t0;
+static uint32_t motion_span(void);
+
 static patch_t P;
 static uint32_t mseed;
 static uint32_t mrnd(void);
@@ -1785,16 +1793,29 @@ static void draw(void)
     case PAGE_MACRO: {
         int k;
         cv_text(8, 1, &FONT_T, "MACROS", C_GRAY);
-        cv_text(150, 1, &FONT_T, "a route source", C_DIM);
+        cv_text(84, 1, &FONT_T, motion_n ? (motion_rec ? "RECORDING" : motion_on ? "PLAYING" : "WRITTEN") : "hold REC", motion_rec ? C_AMB : C_DIM);
         for (k = 0; k < 4; k++) {
             int32_t cx = 2 + (k & 1) * 119;
-            int32_t cy = 14 + (k >> 1) * 62;
-            draw_card(cx, cy, 117, 56, k == macro_sel ? C_HI : RGB(22, 31, 40));
+            int32_t cy = 14 + (k >> 1) * 52;
+            draw_card(cx, cy, 117, 46, k == macro_sel ? C_HI : RGB(22, 31, 40));
             cv_text(cx + 6, cy + 4, &FONT_T, k == 0 ? "M1" : k == 1 ? "M2" : k == 2 ? "M3" : "M4", C_GRAY);
             num_text(v, (int32_t)(P.macro[k] * 100.0f));
-            cv_text(cx + 6, cy + 16, &FONT_S, v, C_HI);
-            cv_rect(cx + 6, cy + 40, 100, 6, RGB(22, 31, 40));
-            cv_rect(cx + 6, cy + 40, (int32_t)(fm_clampf(P.macro[k], 0.0f, 1.0f) * 100.0f), 6, C_HI);
+            cv_text(cx + 6, cy + 14, &FONT_S, v, C_HI);
+            cv_rect(cx + 6, cy + 34, 100, 5, RGB(22, 31, 40));
+            cv_rect(cx + 6, cy + 34, (int32_t)(fm_clampf(P.macro[k], 0.0f, 1.0f) * 100.0f), 5, C_HI);
+        }
+        draw_card(2, 118, 236, 24, RGB(22, 31, 40));
+        {
+            uint32_t span = motion_span();
+            uint32_t ph = motion_n && (motion_rec || motion_on) ? (now - motion_t0) % span : 0;
+            int i;
+            for (i = 0; i < motion_n; i++) {
+                int32_t x = 6 + (int32_t)((float)motion[i].t / (float)span * 228.0f);
+                int32_t y = 124 + (int32_t)((1.0f - motion[i].v) * 14.0f);
+                cv_rect(x, y, 2, 2, motion[i].idx == 0 ? C_HI : motion[i].idx == 1 ? C_WHITE : motion[i].idx == 2 ? C_GRAY : C_AMB);
+            }
+            if (motion_n && (motion_rec || motion_on))
+                cv_rect(6 + (int32_t)((float)ph / (float)span * 228.0f), 120, 1, 20, C_HI);
         }
         break;
     }
@@ -1891,6 +1912,12 @@ static void draw(void)
         } else if (osd_kind == 14) {
             cv_text(8, 7, &FONT_T, "SEQ", C_HI);
             cv_text(36, 7, &FONT_T, seq_mode == 0 ? "STEP" : seq_mode == 1 ? "SHAPE" : "GROOVE", C_WHITE);
+        } else if (osd_kind == 16) {
+            cv_text(8, 7, &FONT_T, "MOTION", C_AMB);
+            cv_text(80, 7, &FONT_T, "recording - move the knobs", C_GRAY);
+        } else if (osd_kind == 17) {
+            cv_text(8, 7, &FONT_T, "MOTION", C_HI);
+            cv_text(80, 7, &FONT_T, motion_n ? "playing" : "nothing recorded", C_GRAY);
         } else if (osd_kind == 15) {
             cv_text(8, 7, &FONT_T, "FX ROUTING", C_HI);
             cv_text(120, 7, &FONT_T, P.fx_mode ? "PARALLEL" : "SERIAL", C_WHITE);
@@ -2151,6 +2178,56 @@ static void seq_chord_rel(void)
             V[seq_ch_voice[k]].stage = 4;
 }
 
+static uint32_t motion_span(void)
+{
+    uint32_t step = 15000u / (P.bpm ? P.bpm : 120u);
+    return step * 64u;                        /* four bars of sixteenths */
+}
+
+static void motion_record(uint8_t idx, float v, uint32_t now)
+{
+    uint32_t span = motion_span();
+    uint16_t t = (uint16_t)((now - motion_t0) % span);
+    int i;
+    for (i = 0; i < motion_n; i++)
+        if (motion[i].idx == idx && motion[i].t + 40u > t && motion[i].t < t + 40u) {
+            motion[i].v = v;
+            return;
+        }
+    if (motion_n < MOT_MAX) {
+        motion[motion_n].idx = idx;
+        motion[motion_n].t = t;
+        motion[motion_n].v = v;
+        motion_n++;
+    }
+}
+
+static void motion_tick(uint32_t now)
+{
+    uint32_t span = motion_span();
+    uint32_t ph;
+    int i, k;
+    if (!motion_n || motion_rec || !motion_on) return;
+    ph = (now - motion_t0) % span;
+    for (k = 0; k < 4; k++) {
+        int32_t best = -1, next = -1;
+        uint32_t bt = 0, nt = 0;
+        for (i = 0; i < motion_n; i++) {
+            if (motion[i].idx != k) continue;
+            if (motion[i].t <= ph) { if (best < 0 || motion[i].t > bt) { best = i; bt = motion[i].t; } }
+            else if (next < 0 || motion[i].t < nt) { next = i; nt = motion[i].t; }
+        }
+        if (best >= 0 && next >= 0 && nt > bt) {
+            float f = (float)(ph - bt) / (float)(nt - bt);
+            P.macro[k] = motion[best].v + (motion[next].v - motion[best].v) * f;
+        } else if (best >= 0) {
+            P.macro[k] = motion[best].v;
+        } else if (next >= 0) {
+            P.macro[k] = motion[next].v;
+        }
+    }
+}
+
 void app_seq_frame(uint32_t keys, uint32_t now)
 {
     static uint32_t next_at, off_at;
@@ -2295,6 +2372,7 @@ void app_frame(void)
     }
     uint32_t prev_btns = btn_prev;
     btn_prev = btns;
+    motion_tick(now);
     if (P.seq_on) app_seq_frame(keys, now);
     else if (P.arp_on) app_arp_frame(keys, now);
     else key_edges(keys);
@@ -2331,6 +2409,13 @@ void app_frame(void)
                     break;
                 }
                 case B_REC:
+                    if (page == PAGE_MACRO) {
+                        motion_rec = (uint8_t)!motion_rec;
+                        if (motion_rec) { motion_t0 = now; motion_on = 0; osd_kind = 16; }
+                        else { motion_on = (uint8_t)(motion_n > 0); osd_kind = 17; }
+                        osd_until = now + 900u;
+                        break;
+                    }
                     if (page == PAGE_SEQ) {
                         P.chord = (uint8_t)!P.chord;
                         osd_kind = 11; osd_until = now + 900u;
@@ -2522,7 +2607,8 @@ void app_frame(void)
             fx_sel = (uint8_t)((fx_sel + (d > 0 ? 1 : FX_MAX - 1)) % FX_MAX);
             break;
         case PAGE_MACRO:
-            macro_sel = (uint8_t)((macro_sel + (d > 0 ? 1 : 3)) & 3);
+            P.macro[0] = fm_clampf(P.macro[0] + (float)d * 0.05f, 0.0f, 1.0f);
+            if (motion_rec) motion_record(0, P.macro[0], now);
             break;
         case PAGE_ARP:
             P.arp_pattern = (uint8_t)((P.arp_pattern + (d > 0 ? 1 : 3)) & 3);
@@ -2581,7 +2667,8 @@ void app_frame(void)
             break;
         }
         case PAGE_MACRO:
-            P.macro[macro_sel] = fm_clampf(P.macro[macro_sel] + (float)d * 0.05f, 0.0f, 1.0f);
+            P.macro[1] = fm_clampf(P.macro[1] + (float)d * 0.05f, 0.0f, 1.0f);
+            if (motion_rec) motion_record(1, P.macro[1], now);
             break;
         case PAGE_ARP:
             P.arp_rate = (uint8_t)((P.arp_rate + (d > 0 ? 1 : 4)) % 5);
@@ -2647,7 +2734,8 @@ void app_frame(void)
             P.arp_oct = (uint8_t)clamp((int32_t)P.arp_oct + (d > 0 ? 1 : -1), 1, 3);
             break;
         case PAGE_MACRO:
-            P.macro[macro_sel] = fm_clampf(P.macro[macro_sel] + (float)d * 0.05f, 0.0f, 1.0f);
+            P.macro[2] = fm_clampf(P.macro[2] + (float)d * 0.05f, 0.0f, 1.0f);
+            if (motion_rec) motion_record(2, P.macro[2], now);
             break;
         case PAGE_SEQ:
             if (seq_mode == SEQ_STEP) {
@@ -2702,7 +2790,8 @@ void app_frame(void)
             P.arp_gate = fm_clampf(P.arp_gate + (float)d * 0.02f, 0.05f, 0.95f);
             break;
         case PAGE_MACRO:
-            P.macro[macro_sel] = fm_clampf(P.macro[macro_sel] + (float)d * 0.05f, 0.0f, 1.0f);
+            P.macro[3] = fm_clampf(P.macro[3] + (float)d * 0.05f, 0.0f, 1.0f);
+            if (motion_rec) motion_record(3, P.macro[3], now);
             break;
         case PAGE_SEQ:
             if (seq_mode == SEQ_STEP) {
@@ -2816,6 +2905,9 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "macro1")) { *got = (int32_t)(P.macro[0] * 100.0f); return 1; }
     if (!strcmp(what, "macro4")) { *got = (int32_t)(P.macro[3] * 100.0f); return 1; }
     if (!strcmp(what, "macsel")) { *got = macro_sel; return 1; }
+    if (!strcmp(what, "motn")) { *got = motion_n; return 1; }
+    if (!strcmp(what, "motrec")) { *got = motion_rec; return 1; }
+    if (!strcmp(what, "moton")) { *got = motion_on; return 1; }
     if (!strcmp(what, "fxmode")) { *got = P.fx_mode; return 1; }
     if (!strcmp(what, "lanefx")) { *got = P.gen[selected].lane_fx; return 1; }
     if (!strcmp(what, "laneamt")) { *got = (int32_t)(P.gen[selected].lane_amt * 100.0f); return 1; }
