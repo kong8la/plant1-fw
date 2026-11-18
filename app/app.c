@@ -86,6 +86,90 @@ static uint32_t motion_t0;
 static uint32_t motion_span(void);
 
 static patch_t P;
+static patch_t AB[2];
+static uint8_t ab_has[2];
+static float ab_morph;
+static uint8_t ab_apply_flag;
+
+static float mixf(float a, float b, float t) { return a + (b - a) * t; }
+static float mixi(int a, int b, float t) { return (float)(int)((float)a + ((float)b - (float)a) * t + 0.5f); }
+
+static void ab_apply(void)
+{
+    float t = fm_clampf(ab_morph, 0.0f, 1.0f);
+    int i, k;
+    if (!ab_has[0] || !ab_has[1]) return;
+    for (i = 0; i < NGEN; i++) {
+        gen_t *A = &AB[0].gen[i], *B = &AB[1].gen[i], *C = &P.gen[i];
+        C->type = t < 0.5f ? A->type : B->type;
+        C->wave = t < 0.5f ? A->wave : B->wave;
+        C->table = t < 0.5f ? A->table : B->table;
+        C->ftype = t < 0.5f ? A->ftype : B->ftype;
+        C->fm_src = t < 0.5f ? A->fm_src : B->fm_src;
+        C->lane_fx = t < 0.5f ? A->lane_fx : B->lane_fx;
+        C->on = t < 0.5f ? A->on : B->on;
+        C->tune = (int8_t)mixi(A->tune, B->tune, t);
+        C->level = mixf(A->level, B->level, t);
+        C->pan = mixf(A->pan, B->pan, t);
+        C->cut = mixf(A->cut, B->cut, t);
+        C->res = mixf(A->res, B->res, t);
+        C->pwm = mixf(A->pwm, B->pwm, t);
+        C->morph = mixf(A->morph, B->morph, t);
+        C->ratio = mixf(A->ratio, B->ratio, t);
+        C->index = mixf(A->index, B->index, t);
+        C->fb = mixf(A->fb, B->fb, t);
+        C->color = mixf(A->color, B->color, t);
+        C->fm_amt = mixf(A->fm_amt, B->fm_amt, t);
+        C->lane_amt = mixf(A->lane_amt, B->lane_amt, t);
+    }
+    P.uni = (uint8_t)mixi(AB[0].uni, AB[1].uni, t);
+    P.detune = mixf(AB[0].detune, AB[1].detune, t);
+    P.spread = mixf(AB[0].spread, AB[1].spread, t);
+    P.a_ms = mixf(AB[0].a_ms, AB[1].a_ms, t);
+    P.d_ms = mixf(AB[0].d_ms, AB[1].d_ms, t);
+    P.s = mixf(AB[0].s, AB[1].s, t);
+    P.r_ms = mixf(AB[0].r_ms, AB[1].r_ms, t);
+    P.e2a = mixf(AB[0].e2a, AB[1].e2a, t);
+    P.e2d = mixf(AB[0].e2d, AB[1].e2d, t);
+    P.e2s = mixf(AB[0].e2s, AB[1].e2s, t);
+    P.e2r = mixf(AB[0].e2r, AB[1].e2r, t);
+    P.lfo_rate = mixf(AB[0].lfo_rate, AB[1].lfo_rate, t);
+    P.lfo_amt = mixf(AB[0].lfo_amt, AB[1].lfo_amt, t);
+    P.lfo2_rate = mixf(AB[0].lfo2_rate, AB[1].lfo2_rate, t);
+    P.lfo2_amt = mixf(AB[0].lfo2_amt, AB[1].lfo2_amt, t);
+    P.lfo_shape = t < 0.5f ? AB[0].lfo_shape : AB[1].lfo_shape;
+    P.lfo2_shape = t < 0.5f ? AB[0].lfo2_shape : AB[1].lfo2_shape;
+    P.vol = mixf(AB[0].vol, AB[1].vol, t);
+    P.bpm = (uint16_t)mixi(AB[0].bpm, AB[1].bpm, t);
+    for (i = 0; i < FX_MAX; i++) {
+        fx_t *A = &AB[0].fx[i], *B = &AB[1].fx[i], *C = &P.fx[i];
+        C->type = t < 0.5f ? A->type : B->type;
+        C->on = t < 0.5f ? A->on : B->on;
+        C->p1 = mixf(A->p1, B->p1, t);
+        C->p2 = mixf(A->p2, B->p2, t);
+        C->p3 = mixf(A->p3, B->p3, t);
+    }
+    for (i = 0; i < NROUTE; i++) {
+        route_t *A = &AB[0].route[i], *B = &AB[1].route[i], *C = &P.route[i];
+        C->src = t < 0.5f ? A->src : B->src;
+        C->dst = t < 0.5f ? A->dst : B->dst;
+        C->on = t < 0.5f ? A->on : B->on;
+        C->amt = mixf(A->amt, B->amt, t);
+    }
+    for (k = 0; k < 4; k++) P.macro[k] = mixf(AB[0].macro[k], AB[1].macro[k], t);
+    for (i = 0; i < 16; i++) {
+        seqstep_t *A = &AB[0].seq[i], *B = &AB[1].seq[i], *C = &P.seq[i];
+        C->on = t < 0.5f ? A->on : B->on;
+        C->note = (int8_t)mixi(A->note, B->note, t);
+        C->vel = (uint8_t)mixi(A->vel, B->vel, t);
+        C->gate = (uint8_t)mixi(A->gate, B->gate, t);
+        C->ratchet = t < 0.5f ? A->ratchet : B->ratchet;
+        C->prob = (uint8_t)mixi(A->prob, B->prob, t);
+        C->tie = t < 0.5f ? A->tie : B->tie;
+    }
+    P.fx_mode = t < 0.5f ? AB[0].fx_mode : AB[1].fx_mode;
+    P.fx_bal = mixf(AB[0].fx_bal, AB[1].fx_bal, t);
+}
 static uint32_t mseed;
 static uint32_t mrnd(void);
 static uint8_t selected, page, preset_index, octave, fx_sel, env_sel, lfo_sel, route_sel;
@@ -1162,7 +1246,7 @@ static const char *const K_LABEL[NPAGES][4] = {
     {"STEP", "NOTE", "VEL", "GATE"},
     {"STYLE", "DENSITY", "SCALE", "ROLL"},
     {"M1", "M2", "M3", "M4"},
-    {"PRESET", "SLOT", "BANK", "-"}
+    {"PRESET", "SLOT", "BANK", "MORPH"}
 };
 
 static void note_text(char *out, int32_t m)
@@ -1831,7 +1915,17 @@ static void draw(void)
             else if (k == 1) { num_text(v, slot_index + 1); cv_text(cx + 5, 58, &FONT_S, v, C_HI); cv_text(cx + 5, 72, &FONT_T, "/ 4", C_DIM); }
             else { num_text(v, preset_index / 8 + 1); cv_text(cx + 5, 58, &FONT_S, v, C_HI); cv_text(cx + 5, 72, &FONT_T, BANK_NAME[preset_index / 8], C_DIM); }
         }
-        cv_text(8, 104, &FONT_T, slot_index < NSLOT && bank.slot[slot_index].used ? "SLOT USED - SAVE overwrites" : "SLOT EMPTY - SAVE stores", C_DIM);
+        cv_text(8, 100, &FONT_T, slot_index < NSLOT && bank.slot[slot_index].used ? "SLOT USED - SAVE overwrites" : "SLOT EMPTY - SAVE stores", C_DIM);
+        draw_card(2, 112, 76, 30, ab_has[0] ? C_HI : RGB(22, 31, 40));
+        cv_text(7, 115, &FONT_T, "A", ab_has[0] ? C_HI : C_DIM);
+        cv_text(24, 115, &FONT_T, ab_has[0] ? "stored" : "PLAY", C_GRAY);
+        draw_card(82, 112, 76, 30, ab_has[1] ? C_HI : RGB(22, 31, 40));
+        cv_text(87, 115, &FONT_T, "B", ab_has[1] ? C_HI : C_DIM);
+        cv_text(104, 115, &FONT_T, ab_has[1] ? "stored" : "REC", C_GRAY);
+        draw_card(162, 112, 76, 30, RGB(22, 31, 40));
+        cv_text(167, 115, &FONT_T, "MORPH", C_GRAY);
+        num_text(v, (int32_t)(ab_morph * 100.0f));
+        cv_text(167, 125, &FONT_S, v, C_HI);
         break;
     }
     }
@@ -1918,6 +2012,15 @@ static void draw(void)
         } else if (osd_kind == 17) {
             cv_text(8, 7, &FONT_T, "MOTION", C_HI);
             cv_text(80, 7, &FONT_T, motion_n ? "playing" : "nothing recorded", C_GRAY);
+        } else if (osd_kind == 18) {
+            cv_text(8, 7, &FONT_T, "PLANT", C_HI);
+            num_text(v, P.seed);
+            cv_text(70, 7, &FONT_T, v, C_WHITE);
+            cv_text(110, 7, &FONT_T, GENRE_NAME[P.genre % 6], C_GRAY);
+        } else if (osd_kind == 19) {
+            cv_text(8, 7, &FONT_T, "A stored", C_HI);
+        } else if (osd_kind == 20) {
+            cv_text(8, 7, &FONT_T, "B stored", C_HI);
         } else if (osd_kind == 15) {
             cv_text(8, 7, &FONT_T, "FX ROUTING", C_HI);
             cv_text(120, 7, &FONT_T, P.fx_mode ? "PARALLEL" : "SERIAL", C_WHITE);
@@ -2046,6 +2149,41 @@ static uint32_t mrnd(void)
 }
 
 /* a style and a seed become sixteen steps: rhythm first, then a note from the scale */
+static void motif_generate(void);
+
+static uint32_t prnd_state;
+static uint32_t prnd(void)
+{
+    prnd_state = prnd_state * 1664525u + 1013904223u;
+    return (prnd_state >> 8) & 0xFFFFu;
+}
+
+/* one seed decides the timbre and the motif together: press SEL and play */
+static void plant_grow(uint16_t seed)
+{
+    int i;
+    prnd_state = 0x9E3779B9u ^ ((uint32_t)seed * 2654435761u);
+    preset_load((uint8_t)(seed % 32));
+    P.seed = seed;
+    P.genre = (uint8_t)(prnd() % 6);
+    P.scale = (uint8_t)(prnd() % 4);
+    P.density = (uint8_t)(4 + prnd() % 9);
+    motif_generate();
+    if (prnd() & 1u) {
+        P.route[0].on = 1; P.route[0].src = SRC_LFO1;
+        P.route[0].dst = (uint8_t)((prnd() % (NGEN * 3)));
+        P.route[0].amt = 0.10f + (float)(prnd() % 40) / 100.0f;
+    }
+    for (i = 1; i < 4; i++) {
+        if ((prnd() & 3u) == 0u) {
+            P.route[i].on = 1;
+            P.route[i].src = (uint8_t)(SRC_ENV2 + prnd() % 3);
+            P.route[i].dst = (uint8_t)((prnd() % (NGEN * 3)));
+            P.route[i].amt = 0.08f + (float)(prnd() % 30) / 100.0f;
+        }
+    }
+}
+
 static void motif_generate(void)
 {
     uint32_t seed = (uint32_t)P.seed * 2654435761u ^ ((uint32_t)P.genre + 1u) * 40503u;
@@ -2391,10 +2529,17 @@ void app_frame(void)
                 hold_hits++;
                 switch (i) {
                 case B_HOME:                                  /* hold HOME: everything off */
-                case B_PLAY:
                     P.seq_on = 0; P.arp_on = 0;
                     seq_stop(); arp_reset();
                     osd_kind = 4; osd_until = now + 900u;
+                    break;
+                case B_PLAY:                                  /* hold PLAY: on PATCH it stores A */
+                    if (page == PAGE_PRESET) { AB[0] = P; ab_has[0] = 1; osd_kind = 19; osd_until = now + 900u; }
+                    else {
+                        P.seq_on = 0; P.arp_on = 0;
+                        seq_stop(); arp_reset();
+                        osd_kind = 4; osd_until = now + 900u;
+                    }
                     break;
                 case B_SAVE:                                  /* hold SAVE: store */
                     patch_save();
@@ -2409,6 +2554,7 @@ void app_frame(void)
                     break;
                 }
                 case B_REC:
+                    if (page == PAGE_PRESET) { AB[1] = P; ab_has[1] = 1; osd_kind = 20; osd_until = now + 900u; break; }
                     if (page == PAGE_MACRO) {
                         motion_rec = (uint8_t)!motion_rec;
                         if (motion_rec) { motion_t0 = now; motion_on = 0; osd_kind = 16; }
@@ -2422,10 +2568,9 @@ void app_frame(void)
                     }
                     break;
                 case B_SEL:
-                    P.seed = (uint16_t)((P.seed + 1) % 10000);
-                    motif_generate();
-                    page = PAGE_MOTIF;
-                    osd_kind = 10; osd_until = now + 900u;
+                    plant_grow((uint16_t)((P.seed + 1) % 10000));
+                    page = PAGE_GEN;
+                    osd_kind = 18; osd_until = now + 1200u;
                     anim_start(ANIM_SWEEP, now);
                     break;
                 case B_EDIT:
@@ -2468,9 +2613,9 @@ void app_frame(void)
                     anim_start(ANIM_BLINK, now);
                     break;
                 case B_SEL:
-                    motif_generate();                /* a new idea, same style */
-                    page = PAGE_MOTIF;
-                    osd_kind = 10; osd_until = now + 900u;
+                    plant_grow((uint16_t)((P.seed + 1) % 10000));
+                    page = PAGE_GEN;
+                    osd_kind = 18; osd_until = now + 1200u;
                     anim_start(ANIM_SWEEP, now);
                     break;
                 case B_EDIT:
@@ -2789,6 +2934,10 @@ void app_frame(void)
         case PAGE_ARP:
             P.arp_gate = fm_clampf(P.arp_gate + (float)d * 0.02f, 0.05f, 0.95f);
             break;
+        case PAGE_PRESET:
+            ab_morph = fm_clampf(ab_morph + (float)d * 0.05f, 0.0f, 1.0f);
+            ab_apply();
+            break;
         case PAGE_MACRO:
             P.macro[3] = fm_clampf(P.macro[3] + (float)d * 0.05f, 0.0f, 1.0f);
             if (motion_rec) motion_record(3, P.macro[3], now);
@@ -2905,6 +3054,10 @@ int app_expect(const char *what, int *got)
     if (!strcmp(what, "macro1")) { *got = (int32_t)(P.macro[0] * 100.0f); return 1; }
     if (!strcmp(what, "macro4")) { *got = (int32_t)(P.macro[3] * 100.0f); return 1; }
     if (!strcmp(what, "macsel")) { *got = macro_sel; return 1; }
+    if (!strcmp(what, "morph")) { *got = (int32_t)(ab_morph * 100.0f); return 1; }
+    if (!strcmp(what, "hasA")) { *got = ab_has[0]; return 1; }
+    if (!strcmp(what, "hasB")) { *got = ab_has[1]; return 1; }
+    if (!strcmp(what, "pseed")) { *got = P.seed; return 1; }
     if (!strcmp(what, "motn")) { *got = motion_n; return 1; }
     if (!strcmp(what, "motrec")) { *got = motion_rec; return 1; }
     if (!strcmp(what, "moton")) { *got = motion_on; return 1; }

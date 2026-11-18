@@ -1,0 +1,40 @@
+wait 1300
+# SEL grows a whole plant: timbre and motif from one seed
+tap SEL
+wait 60
+expect page 0
+expect pseed 14
+shot plant.png
+# A/B morph: store A, change the sound, store B, then morph
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+tap EDIT
+wait 30
+expect page 9
+press PLAY
+wait 800
+release PLAY
+wait 40
+expect hasA 1
+# a different preset is B
+turn K1 3
+wait 40
+press REC
+wait 800
+release REC
+wait 40
+expect hasB 1
+turn K4 5
+wait 40
+expect morph 25
+shot morph.png
+turn K4 10
+wait 40
+expect morph 75
+shot morph2.png

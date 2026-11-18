@@ -4,7 +4,7 @@ shot splash.png
 # SEL is the motif key now: tap rolls a new idea and jumps to MOTIF
 tap SEL
 wait 40
-expect page 7
+expect page 0
 expect mmode 0
 shot sel-motif.png
 # the FX chain has three lanes and a routing switch
